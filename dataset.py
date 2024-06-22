@@ -205,59 +205,6 @@ class Fluo_N2DH_SIM_PLUS(Dataset):
 #     return val_transform
 
 
-# import matplotlib.pyplot as plt
-# def plot_img_befor_transform(image):
-#     image = image.astype(np.float32) / np.iinfo(np.uint16).max
-#     plt.imshow(image, cmap='gray')
-#     plt.show()
-#
-# def plot_img_after_transform(image, mask):
-#     fig, axs = plt.subplots(1, len(image), figsize=(15, 5))
-#     fig2, axs2 = plt.subplots(1, len(mask), figsize=(15, 5))
-#     for i, image in enumerate(image):
-#         axs[i].imshow(image.squeeze()/torch.max(image), cmap='gray')
-#         axs[i].axis("off")
-#         print(f"min{i}: {torch.min(image)}, max{i}: {torch.max(image)}")
-#     for i, mask in enumerate(mask):
-#         axs2[i].imshow(mask.squeeze(), cmap='gray')
-#         axs2[i].axis("off")
-#         print(f"mask-min{i}: {torch.min(image)}, max{i}: {torch.max(image)}")
-#
-#     plt.show()
-
-
-def detect_edges(mask, threshold=0.25):
-    # Compute the gradients along rows and columns
-    gradient_x = torch.gradient(mask, dim=1)
-    gradient_y = torch.gradient(mask, dim=0)
-
-    # Extract gradient components from the tuple
-    gradient_x = gradient_x[0]
-    gradient_y = gradient_y[0]
-
-    gradient_magnitude = torch.sqrt(gradient_x ** 2 + gradient_y ** 2)
-    masked_gradient_magnitude = gradient_magnitude * mask
-    edge_mask = (masked_gradient_magnitude > threshold).to(torch.int)
-
-    return edge_mask
-
-
-def split_mask(mask):
-    three_classes_mask = torch.zeros_like(mask, dtype=torch.int32)
-    for batch_idx in range(mask.size()[0]):
-        unique_elements = torch.unique(mask[batch_idx].flatten())
-        for element in unique_elements:
-            if element != 0:
-                element_mask = (mask[batch_idx] == element).to(torch.int)
-                print(element_mask.sum().item())  # todo delete
-                edges = detect_edges(element_mask)
-                element_mask -= edges
-                three_classes_mask[batch_idx][edges == 1] = 1
-                three_classes_mask[batch_idx][element_mask == 1] = 2
-
-    return three_classes_mask
-
-
 def get_transform(train_aug):
     def affine(image, mask, p=0.5, max_degrees=45, max_scale=0.2, max_shear=10):
         if random.random() < p:
@@ -361,7 +308,7 @@ def get_instance_color(image):
     return colored_image
 
 
-def t_transform_and_cell_size():
+def t_transform():
     train_aug = True
     # get mask
     mask_path = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02_GT/SEG/man_seg140.tif"
@@ -403,14 +350,8 @@ def t_transform_and_cell_size():
         plt.show()
 
 
-
-    # # find cell size
-    # for i in range(5):
-    #     split_mask(mask[i])
-
-
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
 
-    t_transform_and_cell_size()
+    t_transform()
