@@ -13,7 +13,7 @@ import torch
 # from albumentations.pytorch import ToTensorV2
 
 
-class Fluo_N2DH_SIM_PLUS(Dataset):
+class Dataset(Dataset):
     def __init__(self, image_dir, crop_size, mask_dir=None, train_aug=False):
         self.image_dir = image_dir
         self.mask_dir = mask_dir

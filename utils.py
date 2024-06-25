@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import torch.nn.functional as F
 import torchvision.utils as vutils
 from tqdm import tqdm
-from dataset import Fluo_N2DH_SIM_PLUS
+from dataset import Dataset
 from dataset3D import Dataset3D
 from torch.utils.data import DataLoader
 
@@ -55,7 +55,7 @@ def get_loader(
         three_d=False,
 ):
     if not three_d:
-        ds = Fluo_N2DH_SIM_PLUS(
+        ds = Dataset(
             image_dir=dir,
             mask_dir=maskdir,
             crop_size=crop_size,
@@ -221,7 +221,7 @@ def save_predictions_as_imgs(loader, model, folder, device="cuda"):
 
         colored_preds = apply_color_map(predicted_classes).type(torch.uint8)
 
-        colored_gt = apply_color_map(Fluo_N2DH_SIM_PLUS.split_mask(y).long()).type(torch.uint8)
+        colored_gt = apply_color_map(Dataset.split_mask(y).long()).type(torch.uint8)
 
         for i in range(colored_preds.shape[0]):  # Loop through the batch
             # Permute and move to CPU
@@ -255,7 +255,7 @@ def save_test_predictions_as_imgs(
                 preds, f"{folder}/pred_{idx}.png"
             )
             # torchvision.utils.save_image(y.unsqueeze(1), f"{folder}/{idx}.png")
-            torchvision.utils.save_image(Fluo_N2DH_SIM_PLUS.split_mask(y), f"{folder}/{idx}.png")
+            torchvision.utils.save_image(Dataset.split_mask(y), f"{folder}/{idx}.png")
 
     else:
         for idx, x in enumerate(loader):

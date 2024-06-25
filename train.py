@@ -10,7 +10,7 @@ from PIL import Image
 # import albumentations as A
 from model import UNET
 # from albumentations.pytorch import ToTensorV2
-from dataset import Fluo_N2DH_SIM_PLUS
+from dataset import Dataset
 
 import torchvision
 from torchvision import datasets, transforms
@@ -62,9 +62,8 @@ def train_fn(loader, model, optimizer, loss_fn, scaler):
     model.train()
 
     for batch_idx, (data, targets) in enumerate(loop):
-        break  # todo delete
         data = data.to(device=DEVICE)
-        targets = Fluo_N2DH_SIM_PLUS.split_mask(targets).long().to(device=DEVICE)
+        targets = Dataset.split_mask(targets).long().to(device=DEVICE)
 
         # forward
         with torch.cuda.amp.autocast():
@@ -93,10 +92,9 @@ def evaluate_fn(loader, model, loss_fn):
 
     with torch.no_grad():
         for data, targets in loader:
-            break  # todo delete
             data = data.to(device=DEVICE)
 
-            targets = Fluo_N2DH_SIM_PLUS.split_mask(targets).long().to(device=DEVICE)
+            targets = Dataset.split_mask(targets).long().to(device=DEVICE)
             predictions = model(data)
             loss = loss_fn(predictions, targets)
             # Add L1 regularization
