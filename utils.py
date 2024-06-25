@@ -10,6 +10,7 @@ import torch.nn.functional as F
 import torchvision.utils as vutils
 from tqdm import tqdm
 from dataset import Fluo_N2DH_SIM_PLUS
+from dataset3D import Dataset3D
 from torch.utils.data import DataLoader
 
 
@@ -50,14 +51,23 @@ def get_loader(
         batch_size,
         crop_size,
         num_workers=0,
-        pin_memory=True
+        pin_memory=True,
+        three_d=False,
 ):
-    ds = Fluo_N2DH_SIM_PLUS(
-        image_dir=dir,
-        mask_dir=maskdir,
-        crop_size=crop_size,
-        train_aug=train_aug
-    )
+    if not three_d:
+        ds = Fluo_N2DH_SIM_PLUS(
+            image_dir=dir,
+            mask_dir=maskdir,
+            crop_size=crop_size,
+            train_aug=train_aug
+        )
+    else:
+        ds = Dataset3D(
+            image_dir=dir,
+            mask_dir=maskdir,
+            crop_size=crop_size,
+            train_aug=train_aug
+        )
 
     loader = DataLoader(
         ds,
@@ -72,14 +82,19 @@ def get_loader(
     return loader
 
 
-def get_cell_instances(input_np):
-    strel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]])
+def get_cell_instances(input_np, three_d=False):
+    if three_d:
+        strel = np.zeros([3, 3, 3, 3, 3])
+        strel[1][1] = np.array([[[0, 0, 0], [0, 1, 0], [0, 0, 0]], [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
+                                [[0, 0, 0], [0, 1, 0], [0, 0, 0]]])
+    else:
+        strel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]])
     foreground_mask = (input_np == 2).astype(np.uint8)
     labeled, max_num = ndimage.label(foreground_mask, structure=strel)
     return labeled  # , np.array(max_num).astype(np.float32)
 
 
-def check_accuracy(loader, model, device="cuda", one_image=False):
+def check_accuracy(loader, model, device="cuda", one_image=False, three_d=False):
     print("=> Checking accuracy")
     loader = tqdm(loader)
     seg = 0
@@ -91,7 +106,7 @@ def check_accuracy(loader, model, device="cuda", one_image=False):
             predicted_classes = predict_classes(preds).cpu().numpy()  # predict the class 0/1/2
             gt = y.numpy()
             for i in range(predicted_classes.shape[0]):
-                pred_labels_mask = get_cell_instances(predicted_classes[i])
+                pred_labels_mask = get_cell_instances(predicted_classes[i], three_d=three_d)
                 accuracy, _ = calc_SEG_measure(pred_labels_mask, gt[i])
                 seg += accuracy
                 num_iters += 1
@@ -103,7 +118,7 @@ def check_accuracy(loader, model, device="cuda", one_image=False):
     print(f"seg score: {seg / num_iters}")
     model.train()
 
-def check_accuracy_multy_models(loader, models, device="cuda", one_image=False):
+def check_accuracy_multy_models(loader, models, device="cuda", one_image=False, three_d=False):
     print("=> Checking accuracy")
     loader = tqdm(loader)
     seg = 0
@@ -118,7 +133,7 @@ def check_accuracy_multy_models(loader, models, device="cuda", one_image=False):
             predicted_classes = predict_classes(preds).cpu().numpy()  # predict the class 0/1/2
             gt = y.numpy()
             for i in range(predicted_classes.shape[0]):
-                pred_labels_mask = get_cell_instances(predicted_classes[i])
+                pred_labels_mask = get_cell_instances(predicted_classes[i], three_d=three_d)
                 accuracy, _ = calc_SEG_measure(pred_labels_mask, gt[i])
                 seg += accuracy
                 num_iters += 1
@@ -131,9 +146,13 @@ def check_accuracy_multy_models(loader, models, device="cuda", one_image=False):
     print(f"seg score for avg models : {seg / num_iters}")
     for model in models:
         model.train()
-def apply_color_map(input_tensor):
-    if input_tensor.dim() == 2:
-        input_tensor = input_tensor.unsqueeze(0)  # Add batch dimension if single image
+def apply_color_map(input_tensor, three_d=False):
+    if three_d:
+        if input_tensor.dim() == 3:
+            input_tensor = input_tensor.unsqueeze(0)  # Add batch dimension if single image
+    else:
+        if input_tensor.dim() == 2:
+            input_tensor = input_tensor.unsqueeze(0)  # Add batch dimension if single image
 
     # Create a color map tensor based on input values
     color_map = torch.tensor([
@@ -144,7 +163,8 @@ def apply_color_map(input_tensor):
 
     # Index the color_map tensor with input_tensor to assign colors
     output_tensor = color_map[input_tensor]
-
+    if three_d:
+        return output_tensor.permute(0, 4, 1, 2, 3)
     return output_tensor.permute(0, 3, 1, 2)
 
 
@@ -172,7 +192,7 @@ def get_instance_color(image):
 
 
 
-def save_instance_by_colors(loader, model, folder, device="cuda"):
+def save_instance_by_colors(loader, model, folder, device="cuda", three_d=False):
     print("=> saving instance images")
     model.eval()
     for idx, (x, y) in enumerate(loader):
@@ -180,7 +200,7 @@ def save_instance_by_colors(loader, model, folder, device="cuda"):
         with torch.no_grad():
             preds = model(x)
             predicted_classes = predict_classes(preds).cpu().numpy()
-        labeled_preds =get_cell_instances(predicted_classes[0])
+        labeled_preds =get_cell_instances(predicted_classes[0], three_d=three_d)
         gt = y[0].cpu().numpy().astype(np.uint8)
         colored_instance_preds = Image.fromarray(get_instance_color(labeled_preds))
         colored_instance_gt = Image.fromarray(get_instance_color(gt))
@@ -285,94 +305,5 @@ def calc_SEG_measure(pred_labels_mask, gt_labels_mask):
 
     SEG_measure_avg = np.average(SEG_measure_array)
     return SEG_measure_avg, SEG_measure_array
-
-# shakeds:
-# def check_accuracy(loader, model, device="cuda"):
-#     three_d = False
-#     channel_axis = 4 if not three_d else 5
-#     calc_seg_meas = seg_measure(channel_axis=channel_axis, three_d=three_d,
-#                                 foreground_class_index=2)
-#     accuracy = 0
-#     num_iters = 0
-#     model.eval()
-#     with torch.no_grad():
-#         for x, y in loader:
-#             # preds = model(x.to(device))
-#             # preds = preds.unsqueeze(1).permute(0,1,3,4,2).to(device)
-
-#             preds = apply_color_map(Fluo_N2DH_SIM_PLUS.split_mask(y).long())
-#             preds = preds.unsqueeze(1).permute(0,1,3,4,2).to(device)
-
-#             y = y.unsqueeze(1).unsqueeze(4).to(device)
-#             print(f"preds.size: {preds.size()}, gt.size: {y.size()}")
-#             accuracy += calc_seg_meas(y,preds)
-#             num_iters += 1
-#             print(accuracy)
-#     print(f"seg score: {accuracy/num_iters}")
-#     model.train()
-
-# def seg_measure(channel_axis, three_d=False, foreground_class_index=2):
-#     if not three_d:
-#         strel = np.zeros([3, 3])
-#         strel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]])
-#     else:
-#         strel = np.zeros([3, 3, 3, 3, 3])
-#         strel[1][1] = np.array([[[0, 0, 0], [0, 1, 0], [0, 0, 0]], [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
-#                                 [[0, 0, 0], [0, 1, 0], [0, 0, 0]]])
-
-#     def connected_components(input_np):
-#         labeled = np.zeros_like(input_np, dtype=np.uint16)
-#         max_num = 0
-#         for d1, images in enumerate(input_np):
-#             for d2, image in enumerate(images):
-#                 labeled_image, max_num_temp = ndimage.label(image, structure=strel)
-#                 labeled[d1, d2] = labeled_image
-#                 max_num = np.maximum(max_num, max_num_temp)
-
-#         return labeled, np.array(max_num).astype(np.float32)
-
-#     def seg_numpy(gt, seg):
-#         gt_labeled, _ = connected_components(gt)
-#         seg_labeled, _ = connected_components(seg)
-#         all_iou = []
-#         for gt1, seg1 in zip(gt_labeled, seg_labeled):
-#             for gt, seg in zip(gt1, seg1):
-#                 for this_label in np.unique(gt):
-#                     if this_label == 0:
-#                         continue
-#                     all_iou.append(0.)
-#                     bw = gt == this_label
-#                     l_area = np.sum(bw).astype(np.float32)
-#                     overlaping_inds = seg[bw]
-#                     for s in np.unique(overlaping_inds):
-#                         if s == 0:
-#                             continue
-#                         intersection = np.sum(overlaping_inds == s).astype(np.float32)
-#                         overlap = intersection / l_area
-#                         if overlap > 0.5:
-#                             s_area = np.sum(seg == s).astype(np.float32)
-#                             iou = intersection / (l_area + s_area - intersection)
-#                             all_iou[-1] = iou
-#         if not len(all_iou):
-#             return np.nan
-#         return np.mean(all_iou)
-
-
-#     def calc_seg(gt_sequence, output_sequence):
-#         gt_sequence = torch.squeeze(gt_sequence, dim=channel_axis)
-#         gt_valid = gt_sequence > -1
-#         gt_sequence = gt_sequence.float() * gt_valid.float()
-#         gt_fg = (gt_sequence == foreground_class_index).float()
-#         output_classes = torch.argmax(output_sequence, dim=channel_axis)
-#         output_foreground = (output_classes == foreground_class_index).float()
-
-#         gt_fg_np = gt_fg.cpu().numpy() if gt_fg.is_cuda else gt_fg.numpy()
-#         output_foreground_np = output_foreground.cpu().numpy() if output_foreground.is_cuda else output_foreground.numpy()
-
-#         seg_measure_value = seg_numpy(gt_fg_np, output_foreground_np)
-
-#         return seg_measure_value
-
-#     return calc_seg
 
 

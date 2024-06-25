@@ -8,9 +8,9 @@ from tqdm import tqdm
 from PIL import Image
 
 # import albumentations as A
-from model import UNET
+from model3D import UNET3D
 # from albumentations.pytorch import ToTensorV2
-from dataset import Fluo_N2DH_SIM_PLUS
+from dataset3D import Dataset3D
 
 import torchvision
 from torchvision import datasets, transforms
@@ -29,32 +29,28 @@ from utils import (
 )
 
 # Hyperparameters
-LEARNING_RATE = 1e-5
-WEIGHT_DECAY = 1e-4
+LEARNING_RATE = 1e-4
+WEIGHT_DECAY = 1e-3
 L1_LAMBDA = 1e-5
 DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
-BATCH_SIZE = 4
+BATCH_SIZE = 2
 NUM_EPOCHS = 120
 NUM_WORKERS = 2
 CROP_SIZE = (5, 256, 256)
-CLASS_WEIGHTS = [0.1, 0.7, 0.2]  #  [0.15, 0.6, 0.25]#   # [0.1, 0.6, 0.3]   # [0.15, 0.6, 0.25]
+CLASS_WEIGHTS = [0.1, 0.7, 0.2]  # [0.15, 0.6, 0.25]#   # [0.1, 0.6, 0.3]   # [0.15, 0.6, 0.25]
 PIN_MEMORY = False
 LOAD_MODEL = False
 WANDB_TRACKING = False
-TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02"
-TRAIN_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02_ERR_SEG"
-VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/01"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01"
-VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/01_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01_ERR_SEG"
-
-# VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02"
-# VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02_ERR_SEG"
-# TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/01"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01"
-# TRAIN_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/01_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01_ERR_SEG"
+TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02"
+TRAIN_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02_ERR_SEG"
+VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01"
+VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01_ERR_SEG"
 
 
 def calculate_l1_loss(model):
     l1_loss = sum(torch.sum(torch.abs(param)) for param in model.parameters())
     return L1_LAMBDA * l1_loss
+
 
 def train_fn(loader, model, optimizer, loss_fn, scaler):
     loop = tqdm(loader)
@@ -62,9 +58,8 @@ def train_fn(loader, model, optimizer, loss_fn, scaler):
     model.train()
 
     for batch_idx, (data, targets) in enumerate(loop):
-        break  # todo delete
         data = data.to(device=DEVICE)
-        targets = Fluo_N2DH_SIM_PLUS.split_mask(targets).long().to(device=DEVICE)
+        targets = Dataset3D.split_mask(targets).long().to(device=DEVICE)
 
         # forward
         with torch.cuda.amp.autocast():
@@ -93,10 +88,9 @@ def evaluate_fn(loader, model, loss_fn):
 
     with torch.no_grad():
         for data, targets in loader:
-            break  # todo delete
             data = data.to(device=DEVICE)
 
-            targets = Fluo_N2DH_SIM_PLUS.split_mask(targets).long().to(device=DEVICE)
+            targets = Dataset3D.split_mask(targets).long().to(device=DEVICE)
             predictions = model(data)
             loss = loss_fn(predictions, targets)
             # Add L1 regularization
@@ -109,8 +103,8 @@ def evaluate_fn(loader, model, loss_fn):
 
 def main():
     if WANDB_TRACKING:
-        wandb.login(key="12b9b358323faf2af56dc288334e6247c1e8bc63")
-        wandb.init(project="seg_unet",
+        wandb.login(key="")  # todo
+        wandb.init(project="seg_unet_3D",
                    config={
                        "epochs": NUM_EPOCHS,
                        "batch_size": BATCH_SIZE,
@@ -121,24 +115,25 @@ def main():
                        "img_size": CROP_SIZE,
                    })
 
-    model = UNET(in_channels=1, out_channels=3).to(DEVICE)
+    model = UNET3D(in_channels=1, out_channels=3).to(DEVICE)
     class_weights = torch.FloatTensor(CLASS_WEIGHTS).to(DEVICE)
     criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     train_loader = get_loader(dir=TRAIN_IMG_DIR, maskdir=TRAIN_MASK_DIR, train_aug=True, shuffle=True,
                               batch_size=BATCH_SIZE, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                              pin_memory=PIN_MEMORY)
+                              pin_memory=PIN_MEMORY, three_d=True)
     val_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=False,
-                            batch_size=BATCH_SIZE, crop_size=CROP_SIZE, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY)
+                            batch_size=BATCH_SIZE, crop_size=CROP_SIZE, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
+                            three_d=True)
 
     test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=False,
                                             batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                                            pin_memory=PIN_MEMORY)
+                                            pin_memory=PIN_MEMORY, three_d=True)
 
     if LOAD_MODEL:
         load_checkpoint(torch.load("checkpoint/my_checkpoint.pth.tar", map_location=torch.device(DEVICE)), model)
-        check_accuracy(val_loader, model, device=DEVICE)
+        check_accuracy(val_loader, model, device=DEVICE, three_d=True)
 
     scaler = torch.cuda.amp.GradScaler()
 
@@ -151,7 +146,7 @@ def main():
         if WANDB_TRACKING:
             wandb.log({"Train Loss": train_loss, "Val Loss": val_loss})
 
-        if (epoch+1) % 10 == 0:
+        if (epoch + 1) % 10 == 0:
             # save model
             checkpoint = {
                 "state_dict": model.state_dict(),
@@ -163,10 +158,10 @@ def main():
             save_predictions_as_imgs(loader=val_loader, model=model, folder="checkpoint/saved_images", device=DEVICE)
 
     # check accuracy
-    check_accuracy(test_check_accuracy_loader, model, device=DEVICE)
+    check_accuracy(test_check_accuracy_loader, model, device=DEVICE, three_d=True)
 
     # save instance image
-    save_instance_by_colors(test_check_accuracy_loader, model, folder="checkpoint", device=DEVICE)
+    save_instance_by_colors(test_check_accuracy_loader, model, folder="checkpoint", device=DEVICE, three_d=True)
 
     if WANDB_TRACKING:
         # torch.onnx.export(model, torch.randn(1, 1, CROP_SIZE, CROP_SIZE, device=DEVICE), "model.onnx")
@@ -176,39 +171,39 @@ def main():
 
 
 def t_acc():
-    model = UNET(in_channels=1, out_channels=3).to(DEVICE)
+    model = UNET3D(in_channels=1, out_channels=3).to(DEVICE)
     load_checkpoint(torch.load("checkpoint/my_checkpoint.pth.tar", map_location=torch.device(DEVICE)), model)
 
     test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=True,
                                             batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                                            pin_memory=PIN_MEMORY)
-    check_accuracy(test_check_accuracy_loader, model, device=DEVICE, one_image=False)
+                                            pin_memory=PIN_MEMORY, three_d=True)
+    check_accuracy(test_check_accuracy_loader, model, device=DEVICE, one_image=False, three_d=True)
 
 
 def t_acc_mul_models():
-    model1 = UNET(in_channels=1, out_channels=3).to(DEVICE)
+    model1 = UNET3D(in_channels=1, out_channels=3).to(DEVICE)
     load_checkpoint(torch.load("checkpoint/my_checkpoint1.pth.tar", map_location=torch.device(DEVICE)), model1)
 
-    model2 = UNET(in_channels=1, out_channels=3).to(DEVICE)
+    model2 = UNET3D(in_channels=1, out_channels=3).to(DEVICE)
     load_checkpoint(torch.load("checkpoint/my_checkpoint2.pth.tar", map_location=torch.device(DEVICE)), model2)
 
     test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=True,
                                             batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                                            pin_memory=PIN_MEMORY)
-    check_accuracy_multy_models(test_check_accuracy_loader, [model1], device=DEVICE, one_image=False)
-    check_accuracy_multy_models(test_check_accuracy_loader, [model2], device=DEVICE, one_image=False)
-    check_accuracy_multy_models(test_check_accuracy_loader, [model1, model2], device=DEVICE, one_image=False)
-
+                                            pin_memory=PIN_MEMORY, three_d=True)
+    check_accuracy_multy_models(test_check_accuracy_loader, [model1], device=DEVICE, one_image=False, three_d=True)
+    check_accuracy_multy_models(test_check_accuracy_loader, [model2], device=DEVICE, one_image=False, three_d=True)
+    check_accuracy_multy_models(test_check_accuracy_loader, [model1, model2], device=DEVICE, one_image=False,
+                                three_d=True)
 
 
 def t_save_instance_by_colors():
-    model = UNET(in_channels=1, out_channels=3).to(DEVICE)
+    model = UNET3D(in_channels=1, out_channels=3).to(DEVICE)
     load_checkpoint(torch.load("checkpoint/my_checkpoint.pth.tar", map_location=torch.device(DEVICE)), model)
 
     loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=True,
                         batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                        pin_memory=PIN_MEMORY)
-    save_instance_by_colors(loader, model, folder="checkpoint", device=DEVICE)
+                        pin_memory=PIN_MEMORY, three_d=True)
+    save_instance_by_colors(loader, model, folder="checkpoint", device=DEVICE, three_d=True)
 
 
 if __name__ == "__main__":
