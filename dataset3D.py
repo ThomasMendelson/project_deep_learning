@@ -1,13 +1,14 @@
 import os
 import cv2
 import random
+import torch
+import torchio as tio
 from PIL import Image
 import tifffile as tiff
 from torch.utils.data import Dataset
 from torchvision import transforms
 import torchvision.transforms.functional as TF
 import numpy as np
-import torch
 
 
 # import albumentations as A
@@ -21,7 +22,6 @@ class Dataset3D(Dataset):
         self.train_aug = train_aug
         self.images = os.listdir(image_dir)
         self.crop_size = crop_size
-
 
     def __len__(self):
         return len(self.images)
@@ -67,201 +67,192 @@ class Dataset3D(Dataset):
             for element in unique_elements:
                 if element != 0:
                     element_mask = (mask[batch_idx] == element).to(torch.int)
-                    edges = Fluo_N3DH_SIM_PLUS.detect_edges(element_mask)
+                    edges = Dataset3D.detect_edges(element_mask)
                     element_mask -= edges
                     three_classes_mask[batch_idx][edges == 1] = 1
                     three_classes_mask[batch_idx][element_mask == 1] = 2
 
         return three_classes_mask
 
-    def get_transform(self):
-        # def affine(image, mask, p=0.5, max_degrees=45, max_scale=0.2,
-        #            max_shear=10):  # todo need to change to handle 3d
-        #     if random.random() < p:
-        #         degrees = random.uniform(-max_degrees, max_degrees)
-        #         scale = random.uniform(-max_scale, max_scale)
-        #         scale += 1
-        #         shear_x = random.uniform(-max_shear, max_shear)
-        #         shear_y = random.uniform(-max_shear, max_shear)
-        #         aff_image = TF.affine(image, angle=degrees, translate=(0, 0), scale=scale, shear=(shear_x, shear_y))
-        #         aff_mask = TF.affine(mask, angle=degrees, translate=(0, 0), scale=scale, shear=(shear_x, shear_y))
-        #         return aff_image, aff_mask
-        #     return image, mask
+    def get_transform(train_aug):
+        def affine(image, mask, p=0.5, max_degrees=15, max_scale=0.2):
+            if random.random() < p:
+                scales = []
+                degrees = []
+                for i in range(3):
+                    degree = random.uniform(-max_degrees, max_degrees)
+                    scale = random.uniform(-max_scale, max_scale) + 1
+                    scales.append(scale)
+                    scales.append(scale)
+                    degrees.append(degree)
+                    degrees.append(degree)
+                transforms = tio.Compose([
+                    tio.RandomAffine(
+                        scales=tuple(scales),
+                        degrees=tuple(degrees),
+                        default_pad_value=0,
+                    ),
+                ])
+                image = transforms(image)
+                mask = transforms(mask)
+            return image, mask
 
         def horizontal_flip(image, mask, p=0.5):
             if random.random() < p:
-                # Flip width dimension
-                image = torch.flip(image, dims=[2])
-                mask = torch.flip(mask, dims=[2])
+                transforms = tio.Compose([
+                    tio.RandomFlip(axes=2, flip_probability=1),  # Horizontal
+                ])
+                image = transforms(image)
+                mask = transforms(mask)
             return image, mask
 
         def vertical_flip(image, mask, p=0.5):
             if random.random() < p:
-                # Flip height dimension
-                image = torch.flip(image, dims=[1])
-                mask = torch.flip(mask, dims=[1])
-                return TF.vflip(image), TF.vflip(mask)
+                transforms = tio.Compose([
+                    tio.RandomFlip(axes=1, flip_probability=1),  # Horizontal
+                ])
+                image = transforms(image)
+                mask = transforms(mask)
             return image, mask
 
         def depth_flip(image, mask, p=0.5):
             if random.random() < p:
-                # Flip depth dimension
-                image = torch.flip(image, dims=[0])
-                mask = torch.flip(mask, dims=[0])
+                transforms = tio.Compose([
+                    tio.RandomFlip(axes=0, flip_probability=1),  # Horizontal
+                ])
+                image = transforms(image)
+                mask = transforms(mask)
             return image, mask
 
         def random_crop(image, mask, crop_size, num_crops=10, threshold=500):
-            # image, mask are PIL
-            count = 0
-            depth, height, width = crop_size
-            images = np.zeros((num_crops, depth, height, width), dtype=np.float32)
-            masks = np.zeros((num_crops, depth, height, width), dtype=np.float32)
-            while count < num_crops:
-                d, h, w = [random.randint(0, s - cs) for s, cs in zip(image.shape, crop_size)]
-                cropped_image = image[d:d + depth, h:h + height, w:w + width]
-                cropped_mask = mask[d:d + depth, h:h + height, w:w + width]
+            depth, height, width = image.shape[-3:]
+            crop_depth, crop_height, crop_width = crop_size
 
-                if np.count_nonzero(cropped_mask) > threshold:
-                    images[count] = cropped_image
-                    masks[count] = cropped_mask
-                    count += 1
+            if crop_depth > depth or crop_height > height or crop_width > width:
+                raise ValueError("Crop shape is larger than the image dimensions")
 
-            return images, masks
+            while True:
+                # Random starting points
+                start_d = torch.randint(0, depth - crop_depth + 1, (1,)).item()
+                start_h = torch.randint(0, height - crop_height + 1, (1,)).item()
+                start_w = torch.randint(0, width - crop_width + 1, (1,)).item()
+                # Crop the image
+                cropped_image = image[:, start_d:start_d + crop_depth, start_h:start_h + crop_height,
+                                start_w:start_w + crop_width]
+                cropped_mask = mask[:, start_d:start_d + crop_depth, start_h:start_h + crop_height,
+                               start_w:start_w + crop_width]
+                if torch.sum(cropped_image > 0) > threshold * crop_depth:
+                    break
 
-        def to_tensor(images, masks):
-            # Convert batch of images(batch_size, D, H, W) and masks to PyTorch tensors (batch_size, C, D, H, W)
-            batch_size = images.shape[0]
-            tensor_images = torch.zeros((batch_size, 1, images.shape[-3], images.shape[-2], images.shape[-1]), dtype=torch.float32)
-            tensor_masks = torch.zeros((batch_size, images.shape[-3], images.shape[-2], images.shape[-1]), dtype=torch.float32)
+            return cropped_image, cropped_mask
 
-            for i in range(batch_size):
-                tensor_images[i] = transforms.ToTensor()(images[i])
-                tensor_masks[i] = transforms.ToTensor()(masks[i])
-
-            return tensor_images, tensor_masks
-
-        def val_to_tensor(image, mask):
-            # Convert  images and masks to PyTorch tensors (1, 1, D, H, W)
-            # input (D, H, W)
-            if len(image.shape) == 3:  # Grayscale image
-                image = np.expand_dims(image, axis=0)
-
-            image = np.expand_dims(image, axis=0)
-            mask = np.expand_dims(mask, axis=0)
-
-            tensor_image = torch.from_numpy(image).float()
-            tensor_mask = torch.from_numpy(mask).float()
-            return tensor_image, tensor_mask
+        def to_tensor(image, mask):
+            image, mask = torch.from_numpy(image), torch.from_numpy(mask)
+            return image.unsqueeze(0), mask.unsqueeze(0)
 
         def transform(image, mask):
-            if self.train_aug:
-                # image, mask = rotate(image, mask, p=0.5)
-                image, mask = Image.fromarray(image), Image.fromarray(mask)
-                # image, mask = affine(image, mask, p=0.5, max_degrees=45, max_scale=0.2, max_shear=10)
+            image, mask = to_tensor(image, mask)
+            if train_aug:
+                image, mask = affine(image, mask, p=0.5, max_degrees=15, max_scale=0.2)
                 image, mask = horizontal_flip(image, mask, p=0.5)
                 image, mask = vertical_flip(image, mask, p=0.5)
                 image, mask = depth_flip(image, mask, p=0.5)
-                image, mask = random_crop(image, mask, crop_size=self.crop_size)
-                return to_tensor(np.array(image), np.array(mask))
-
-            return val_to_tensor(image, mask)
+                image, mask = random_crop(image, mask, crop_size=(5, 256, 256))
+            return image, mask
 
         return transform
 
 
 def get_transform(train_aug):
-    # def affine(image, mask, p=0.5, max_degrees=45, max_scale=0.2,
-    #            max_shear=10):  # todo need to change to handle 3d
-    #     if random.random() < p:
-    #         degrees = random.uniform(-max_degrees, max_degrees)
-    #         scale = random.uniform(-max_scale, max_scale)
-    #         scale += 1
-    #         shear_x = random.uniform(-max_shear, max_shear)
-    #         shear_y = random.uniform(-max_shear, max_shear)
-    #         aff_image = TF.affine(image, angle=degrees, translate=(0, 0), scale=scale, shear=(shear_x, shear_y))
-    #         aff_mask = TF.affine(mask, angle=degrees, translate=(0, 0), scale=scale, shear=(shear_x, shear_y))
-    #         return aff_image, aff_mask
-    #     return image, mask
+    def affine(image, mask, p=0.5, max_degrees=15, max_scale=0.2):
+        if random.random() < p:
+            scales = []
+            degrees = []
+            for i in range(3):
+                degree = random.uniform(-max_degrees, max_degrees)
+                scale = random.uniform(-max_scale, max_scale) + 1
+                scales.append(scale)
+                scales.append(scale)
+                degrees.append(degree)
+                degrees.append(degree)
+            transforms = tio.Compose([
+                tio.RandomAffine(
+                    scales=tuple(scales),
+                    degrees=tuple(degrees),
+                    default_pad_value=0,
+                ),
+            ])
+            image = transforms(image)
+            mask = transforms(mask)
+            # print(f"degrees: {degrees[1::2]}")
+            # print(f"scales: {scales[1::2]}")
+        return image, mask
 
     def horizontal_flip(image, mask, p=0.5):
         if random.random() < p:
-            # Flip width dimension
-            image = torch.flip(image, dims=[2])
-            mask = torch.flip(mask, dims=[2])
+            transforms = tio.Compose([
+                tio.RandomFlip(axes=2, flip_probability=1),  # Horizontal
+            ])
+            image = transforms(image)
+            mask = transforms(mask)
         return image, mask
 
     def vertical_flip(image, mask, p=0.5):
         if random.random() < p:
-            # Flip height dimension
-            image = torch.flip(image, dims=[1])
-            mask = torch.flip(mask, dims=[1])
-            return TF.vflip(image), TF.vflip(mask)
+            transforms = tio.Compose([
+                tio.RandomFlip(axes=1, flip_probability=1),  # Horizontal
+            ])
+            image = transforms(image)
+            mask = transforms(mask)
         return image, mask
 
     def depth_flip(image, mask, p=0.5):
         if random.random() < p:
-            # Flip depth dimension
-            image = torch.flip(image, dims=[0])
-            mask = torch.flip(mask, dims=[0])
+            transforms = tio.Compose([
+                tio.RandomFlip(axes=0, flip_probability=1),  # Horizontal
+            ])
+            image = transforms(image)
+            mask = transforms(mask)
         return image, mask
 
     def random_crop(image, mask, crop_size, num_crops=10, threshold=500):
-        # image, mask are PIL
-        count = 0
-        depth, height, width = crop_size
-        images = np.zeros((num_crops, depth, height, width), dtype=np.float32)
-        masks = np.zeros((num_crops, depth, height, width), dtype=np.float32)
-        while count < num_crops:
-            d, h, w = [random.randint(0, s - cs) for s, cs in zip(image.shape, crop_size)]
-            cropped_image = image[d:d + depth, h:h + height, w:w + width]
-            cropped_mask = mask[d:d + depth, h:h + height, w:w + width]
+        depth, height, width = image.shape[-3:]
+        crop_depth, crop_height, crop_width = crop_size
 
-            if np.count_nonzero(cropped_mask) > threshold:
-                images[count] = cropped_image
-                masks[count] = cropped_mask
-                count += 1
+        if crop_depth > depth or crop_height > height or crop_width > width:
+            raise ValueError("Crop shape is larger than the image dimensions")
 
-        return images, masks
+        while True:
+            # Random starting points
+            start_d = torch.randint(0, depth - crop_depth + 1, (1,)).item()
+            start_h = torch.randint(0, height - crop_height + 1, (1,)).item()
+            start_w = torch.randint(0, width - crop_width + 1, (1,)).item()
+            # Crop the image
+            cropped_image = image[:, start_d:start_d + crop_depth, start_h:start_h + crop_height,
+                            start_w:start_w + crop_width]
+            cropped_mask = mask[:, start_d:start_d + crop_depth, start_h:start_h + crop_height,
+                           start_w:start_w + crop_width]
+            if torch.sum(cropped_image > 0) > threshold * crop_depth:
+                # print(f"depth: {depth}, height: {height}, width: {width}")
+                # print(f"crop_depth: {crop_depth}, crop_height: {crop_height}, crop_width: {crop_width}")
+                # print(f"start_d: {start_d}, start_h: {start_h}, start_w: {start_w}")
+                break
 
-    def to_tensor(images, masks):
-        # Convert batch of images(batch_size, D, H, W) and masks to PyTorch tensors (batch_size, C, D, H, W)
-        batch_size = images.shape[0]
-        tensor_images = torch.zeros((batch_size, 1, images.shape[-3], images.shape[-2], images.shape[-1]),
-                                    dtype=torch.float32)
-        tensor_masks = torch.zeros((batch_size, images.shape[-3], images.shape[-2], images.shape[-1]),
-                                   dtype=torch.float32)
+        return cropped_image, cropped_mask
 
-        for i in range(batch_size):
-            tensor_images[i] = transforms.ToTensor()(images[i])
-            tensor_masks[i] = transforms.ToTensor()(masks[i])
-
-        return tensor_images, tensor_masks
-
-    def val_to_tensor(image, mask):
-        # Convert  images and masks to PyTorch tensors (1, 1, D, H, W)
-        # input (D, H, W)
-        if len(image.shape) == 3:  # Grayscale image
-            image = np.expand_dims(image, axis=0)
-
-        image = np.expand_dims(image, axis=0)
-        mask = np.expand_dims(mask, axis=0)
-
-        tensor_image = torch.from_numpy(image).float()
-        tensor_mask = torch.from_numpy(mask).float()
-        return tensor_image, tensor_mask
+    def to_tensor(image, mask):
+        image, mask = torch.from_numpy(image), torch.from_numpy(mask)
+        return image.unsqueeze(0), mask.unsqueeze(0)
 
     def transform(image, mask):
+        image, mask = to_tensor(image, mask)
         if train_aug:
-            # image, mask = rotate(image, mask, p=0.5)
-            image, mask = Image.fromarray(image), Image.fromarray(mask)
-            # image, mask = affine(image, mask, p=0.5, max_degrees=45, max_scale=0.2, max_shear=10)
+            image, mask = affine(image, mask, p=0.5, max_degrees=15, max_scale=0.2)
             image, mask = horizontal_flip(image, mask, p=0.5)
             image, mask = vertical_flip(image, mask, p=0.5)
             image, mask = depth_flip(image, mask, p=0.5)
             image, mask = random_crop(image, mask, crop_size=(5, 256, 256))
-            return to_tensor(np.array(image), np.array(mask))
-
-        return val_to_tensor(image, mask)
+        return image, mask
 
     return transform
 
@@ -286,42 +277,85 @@ def get_instance_color(image):
 def t_transform():
     train_aug = True
     # get mask
-    mask_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/SEG/man_seg140.tif"
-    img_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02/t140.tif"
-    image = tiff.imread(img_path)
-    mask = tiff.imread(mask_path)
-    mask = mask.astype(np.float32)
-    image = image.astype(np.float32)
+    # img_path = "/media/rrtammyfs/labDatabase/CellTrackingChallenge/Training/Fluo-N3DH-SIM+/01/t070.tif"
+    # mask_path ="/media/rrtammyfs/labDatabase/CellTrackingChallenge/Training/Fluo-N3DH-SIM+/01_GT/SEG/man_seg070.tif"
+    mask_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG/man_seg070.tif"
+    img_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01/t070.tif"
+    image = tiff.imread(img_path).astype(np.float32)
+    mask = tiff.imread(mask_path).astype(np.float32)
+
     image = (image - image.mean()) / (image.std())
 
-    # test the augmantations one by one
+    transform = get_transform(train_aug)
+    tras_image, tras_mask = transform(image=image, mask=mask)
+
+    image_middle_index = tras_image.shape[1] // 2
+
+    ffig, axs = plt.subplots(2, 5, figsize=(15, 5))
+    for i in range(5):
+        axs[0, i].imshow(tras_image[0, image_middle_index - 2 + i], cmap='gray')
+        axs[0, i].set_title(f"{i - 2}")
+        axs[0, i].axis('off')  # Hide the axes
+        axs[1, i].imshow(tras_mask[0, image_middle_index - 2 + i], cmap='gray')
+        axs[1, i].set_title(f"{i - 2}")
+        axs[1, i].axis('off')  # Hide the axes
+
+    # Adjust spacing between plots
+    ffig.suptitle("crop aug", fontsize=16)
+    plt.tight_layout()
+    plt.show()
+
+    ffig, axs = plt.subplots(1, 3, figsize=(15, 5))
+    axs[0].imshow(image[image_middle_index], cmap='gray')
+    axs[0].set_title(f"original image middle slice")
+    axs[0].axis('off')  # Hide the axes
+    axs[1].imshow(tras_image[0, image_middle_index], cmap='gray')
+    axs[1].set_title(f"affine image middle slice")
+    axs[1].axis('off')  # Hide the axes
+    axs[2].imshow(tras_mask[0, image_middle_index], cmap='gray')
+    axs[2].set_title(f"affine mask middle slice")
+    axs[2].axis('off')  # Hide the axes
+
+    # Adjust spacing between plots
+    # ffig.suptitle("all aug", fontsize=16)
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+
+
+    # image_middle_index = image.shape[0] // 2
+    #
     # gt = mask.astype(np.uint8)
     # colored_instance_gt = get_instance_color(gt)
+    # print(f"image size: {image.shape}")
     # plt.figure()
-    # plt.imshow(image)
+    # plt.imshow(image[image_middle_index])
     # plt.axis('off')  # Hide axes
-    # plt.title('original image')
+    # plt.title('original image middle slice')
     # plt.show()
-
-    transform = get_transform(train_aug)
-    image, mask = transform(image=image, mask=mask)
-    image = image.cpu().numpy()
-    if train_aug:
-        # gt = mask.cpu().numpy().astype(np.uint8)
-        for i in range(5):
-            # colored_instance_gt = get_instance_color(gt[i, 0])
-            plt.figure()
-            # plt.imshow(colored_instance_gt)
-            plt.imshow(image[i, 0])
-            plt.axis('off')  # Hide axes
-            plt.title('all aug image')
-            plt.show()
-    else:
-        plt.figure()
-        plt.imshow(image[0, 0])
-        plt.axis('off')  # Hide axes
-        plt.title('v_flip image')
-        plt.show()
+    #
+    # transform = get_transform(train_aug)
+    # image, mask = transform(image=image, mask=mask)
+    # image = image.cpu().numpy()
+    # if train_aug:
+    #     # gt = mask.cpu().numpy().astype(np.uint8)
+    #     for i in range(5):
+    #         # colored_instance_gt = get_instance_color(gt[i, 0])
+    #         plt.figure()
+    #         # plt.imshow(colored_instance_gt)
+    #         plt.imshow(image[i, 0, image_middle_index])
+    #         plt.axis('off')  # Hide axes
+    #         plt.title('all aug image')
+    #         plt.show()
+    # else:
+    #     plt.figure()
+    #     plt.imshow(image[0, 0, image_middle_index])
+    #     plt.axis('off')  # Hide axes
+    #     plt.title('h_flip image')
+    #     plt.show()
 
 
 if __name__ == "__main__":
@@ -339,7 +373,10 @@ if __name__ == "__main__":
 
 
 
-#todo look if it is working?
+
+
+
+# todo look if it is working?
 def affine_3d(image, mask, max_degrees=45, max_scale=0.2, max_shear=10):
     """
     Apply a 3D affine transformation to the image and mask.
