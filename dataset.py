@@ -83,7 +83,7 @@ class Dataset(Dataset):
             for element in unique_elements:
                 if element != 0:
                     element_mask = (mask[batch_idx] == element).to(torch.int)
-                    edges = Fluo_N2DH_SIM_PLUS.detect_edges(element_mask)
+                    edges = Dataset.detect_edges(element_mask)
                     element_mask -= edges
                     three_classes_mask[batch_idx][edges == 1] = 1
                     three_classes_mask[batch_idx][element_mask == 1] = 2

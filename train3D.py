@@ -32,19 +32,20 @@ from utils import (
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-3
 L1_LAMBDA = 1e-5
-DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
-BATCH_SIZE = 2
+DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
+print(DEVICE)
+BATCH_SIZE = 4
 NUM_EPOCHS = 120
 NUM_WORKERS = 2
-CROP_SIZE = (5, 256, 256)
+CROP_SIZE = (32, 256, 256)
 CLASS_WEIGHTS = [0.1, 0.7, 0.2]  # [0.15, 0.6, 0.25]#   # [0.1, 0.6, 0.3]   # [0.15, 0.6, 0.25]
 PIN_MEMORY = False
 LOAD_MODEL = False
-WANDB_TRACKING = False
-TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02"
-TRAIN_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02_ERR_SEG"
-VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01"
-VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01_ERR_SEG"
+WANDB_TRACKING = True
+TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02"
+TRAIN_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02_ERR_SEG"
+VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01"
+VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01_ERR_SEG"
 
 
 def calculate_l1_loss(model):
@@ -58,12 +59,15 @@ def train_fn(loader, model, optimizer, loss_fn, scaler):
     model.train()
 
     for batch_idx, (data, targets) in enumerate(loop):
+        # print(f"in train \ndata shape: {data.shape}")
         data = data.to(device=DEVICE)
         targets = Dataset3D.split_mask(targets).long().to(device=DEVICE)
 
         # forward
         with torch.cuda.amp.autocast():
             predictions = model(data)
+            # print(f"in train \npredictions shape: {predictions.shape}")
+            # print(f"in train \ntargets shape: {targets.shape}")
             loss = loss_fn(predictions, targets)
             # Add L1 regularization
             loss += calculate_l1_loss(model)
@@ -103,7 +107,7 @@ def evaluate_fn(loader, model, loss_fn):
 
 def main():
     if WANDB_TRACKING:
-        wandb.login(key="")  # todo
+        wandb.login(key="12b9b358323faf2af56dc288334e6247c1e8bc63")
         wandb.init(project="seg_unet_3D",
                    config={
                        "epochs": NUM_EPOCHS,

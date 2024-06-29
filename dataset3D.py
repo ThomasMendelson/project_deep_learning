@@ -38,8 +38,9 @@ class Dataset3D(Dataset):
             mask = mask.astype(np.float32)
 
             transform = self.get_transform()
+            image, mask = transform(image=image, mask=mask)
 
-            return transform(image=image, mask=mask)
+            return image, mask
 
     @staticmethod
     def detect_edges(mask, threshold=0.25):
@@ -61,6 +62,7 @@ class Dataset3D(Dataset):
 
     @staticmethod
     def split_mask(mask):
+        # mask: torch.Size([batch, 1, 5, 256, 256])
         three_classes_mask = torch.zeros_like(mask, dtype=torch.int32)
         for batch_idx in range(mask.size()[0]):
             unique_elements = torch.unique(mask[batch_idx].flatten())
@@ -74,7 +76,7 @@ class Dataset3D(Dataset):
 
         return three_classes_mask
 
-    def get_transform(train_aug):
+    def get_transform(self):
         def affine(image, mask, p=0.5, max_degrees=15, max_scale=0.2):
             if random.random() < p:
                 scales = []
@@ -152,13 +154,13 @@ class Dataset3D(Dataset):
 
         def transform(image, mask):
             image, mask = to_tensor(image, mask)
-            if train_aug:
+            if self.train_aug:
                 image, mask = affine(image, mask, p=0.5, max_degrees=15, max_scale=0.2)
                 image, mask = horizontal_flip(image, mask, p=0.5)
                 image, mask = vertical_flip(image, mask, p=0.5)
                 image, mask = depth_flip(image, mask, p=0.5)
-                image, mask = random_crop(image, mask, crop_size=(5, 256, 256))
-            return image, mask
+                image, mask = random_crop(image, mask, crop_size=self.crop_size)
+            return image, mask.squeeze(0)
 
         return transform
 

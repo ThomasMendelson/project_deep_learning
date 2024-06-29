@@ -20,7 +20,8 @@ class DoubleConv3D(nn.Module):
 
 class UNET3D(nn.Module):
     def __init__(
-            self, in_channels=1, out_channels=3, features=[64, 128, 256, 512, 1024],
+            # self, in_channels=1, out_channels=3, features=[64, 128, 256, 512, 1024],
+            self, in_channels=1, out_channels=3, features=[64, 128, 256, 512],
     ):
         super(UNET3D, self).__init__()
         self.ups = nn.ModuleList()
@@ -69,7 +70,7 @@ class UNET3D(nn.Module):
 
 
 def t():
-    x = torch.randn((2, 1, 59,  642, 652))
+    x = torch.randn((2, 1, 32,  642, 652))
     model = UNET3D(in_channels=1, out_channels=1)
     preds = model(x)
     print(preds.shape)

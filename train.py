@@ -29,15 +29,15 @@ from utils import (
 )
 
 # Hyperparameters
-LEARNING_RATE = 1e-5
-WEIGHT_DECAY = 1e-4
+LEARNING_RATE = 1e-4
+WEIGHT_DECAY = 1e-3
 L1_LAMBDA = 1e-5
-DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
-BATCH_SIZE = 4
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+BATCH_SIZE = 2
 NUM_EPOCHS = 120
 NUM_WORKERS = 2
 CROP_SIZE = 256
-CLASS_WEIGHTS = [0.1, 0.7, 0.2]  #  [0.15, 0.6, 0.25]#   # [0.1, 0.6, 0.3]   # [0.15, 0.6, 0.25]
+CLASS_WEIGHTS = [0.1, 0.7, 0.2]#  #  #   # [0.1, 0.6, 0.3]   # [0.15, 0.6, 0.25]
 PIN_MEMORY = False
 LOAD_MODEL = False
 WANDB_TRACKING = False
@@ -68,6 +68,8 @@ def train_fn(loader, model, optimizer, loss_fn, scaler):
         # forward
         with torch.cuda.amp.autocast():
             predictions = model(data)
+            print(f"in train predictions shape: {predictions.shape}")
+            print(f"in train targets shape: {targets.shape}")
             loss = loss_fn(predictions, targets)
             # Add L1 regularization
             loss += calculate_l1_loss(model)
@@ -108,7 +110,7 @@ def evaluate_fn(loader, model, loss_fn):
 def main():
     if WANDB_TRACKING:
         wandb.login(key="12b9b358323faf2af56dc288334e6247c1e8bc63")
-        wandb.init(project="seg_unet",
+        wandb.init(project="seg_unet_1",
                    config={
                        "epochs": NUM_EPOCHS,
                        "batch_size": BATCH_SIZE,

@@ -61,6 +61,15 @@ def get_loader(
             crop_size=crop_size,
             train_aug=train_aug
         )
+        loader = DataLoader(
+            ds,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            shuffle=shuffle,
+            drop_last=True,
+            collate_fn=custom_collate_fn,
+        )
     else:
         ds = Dataset3D(
             image_dir=dir,
@@ -68,16 +77,17 @@ def get_loader(
             crop_size=crop_size,
             train_aug=train_aug
         )
+        loader = DataLoader(
+            ds,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            shuffle=shuffle,
+            drop_last=True,
+            # collate_fn=custom_collate_fn,
+        )
 
-    loader = DataLoader(
-        ds,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        shuffle=shuffle,
-        drop_last=True,
-        collate_fn=custom_collate_fn,
-    )
+
 
     return loader
 
