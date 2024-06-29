@@ -32,21 +32,26 @@ from utils import (
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-3
 L1_LAMBDA = 1e-5
-DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
-print(DEVICE)
+# DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# print(DEVICE)
 BATCH_SIZE = 4
-NUM_EPOCHS = 120
+NUM_EPOCHS = 50
 NUM_WORKERS = 2
-CROP_SIZE = (16, 256, 256)
+CROP_SIZE = (16, 32, 32)
 CLASS_WEIGHTS = [0.1, 0.7, 0.2]  # [0.15, 0.6, 0.25]#   # [0.1, 0.6, 0.3]   # [0.15, 0.6, 0.25]
 PIN_MEMORY = False
-LOAD_MODEL = False
-WANDB_TRACKING = True
-TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02"
-TRAIN_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02_ERR_SEG"
-VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01"
-VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01_ERR_SEG"
+LOAD_MODEL = True
+WANDB_TRACKING = False
+# TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02"
+# TRAIN_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02_ERR_SEG"
+# VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01"
+# VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01_ERR_SEG"
 
+TRAIN_IMG_DIR = r"C:\Users\beaviv\PycharmProjects\ImageProcessing\Datasets\Fluo-N3DH-SIM+\01"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02"
+TRAIN_MASK_DIR = r"C:\Users\beaviv\PycharmProjects\ImageProcessing\Datasets\Fluo-N3DH-SIM+\01_GT\SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02_ERR_SEG"
+VAL_IMG_DIR = r"C:\Users\beaviv\PycharmProjects\ImageProcessing\Datasets\Fluo-N3DH-SIM+\02"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01"
+VAL_MASK_DIR = r"C:\Users\beaviv\PycharmProjects\ImageProcessing\Datasets\Fluo-N3DH-SIM+\02_GT\SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01_ERR_SEG"
 
 def calculate_l1_loss(model):
     l1_loss = sum(torch.sum(torch.abs(param)) for param in model.parameters())
@@ -134,9 +139,9 @@ def main():
                                             pin_memory=PIN_MEMORY, three_d=True)
 
     if LOAD_MODEL:
-        load_checkpoint(torch.load("checkpoint/my_checkpoint.pth.tar", map_location=torch.device(DEVICE)), model)
-        check_accuracy(val_loader, model, device=DEVICE, three_d=True)
-
+        load_checkpoint(torch.load(f"checkpoint/my_checkpoint_9.pth.tar", map_location=torch.device(DEVICE)), model)
+        # print(model)
+        # check_accuracy(val_loader, model, device=DEVICE, three_d=True)
     scaler = torch.cuda.amp.GradScaler()
 
     for epoch in range(NUM_EPOCHS):
@@ -154,10 +159,10 @@ def main():
                 "state_dict": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
             }
-            save_checkpoint(checkpoint, filename="checkpoint/my_checkpoint.pth.tar")
+            save_checkpoint(checkpoint, filename=f"checkpoint/my_checkpoint_{epoch}.pth.tar")
 
             # print some examples to a folder
-            save_predictions_as_imgs(loader=val_loader, model=model, folder="checkpoint/saved_images", device=DEVICE)
+            save_predictions_as_imgs(loader=val_loader, model=model, folder="checkpoint/saved_images", device=DEVICE, three_d=True)
 
     # check accuracy
     check_accuracy(test_check_accuracy_loader, model, device=DEVICE, three_d=True)

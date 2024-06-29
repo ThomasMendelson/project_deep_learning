@@ -6,6 +6,7 @@ from PIL import Image
 import numpy as np
 from scipy import ndimage
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import torch.nn.functional as F
 import torchvision.utils as vutils
 from tqdm import tqdm
@@ -94,8 +95,8 @@ def get_loader(
 
 def get_cell_instances(input_np, three_d=False):
     if three_d:
-        strel = np.zeros([3, 3, 3, 3, 3])
-        strel[1][1] = np.array([[[0, 0, 0], [0, 1, 0], [0, 0, 0]], [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
+        # strel = np.zeros([3, 3, 3, 3, 3])
+        strel = np.array([[[0, 0, 0], [0, 1, 0], [0, 0, 0]], [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
                                 [[0, 0, 0], [0, 1, 0], [0, 0, 0]]])
     else:
         strel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]])
@@ -189,7 +190,7 @@ def get_instance_color(image):
     unique_labels = unique_labels[unique_labels != 0]  # Remove background label if present
 
     # Generate a unique color for each label
-    color_map = plt.cm.get_cmap('hsv', len(unique_labels))
+    color_map = plt.get_cmap('hsv', len(unique_labels))
 
     # Create an empty color image
     colored_image = np.zeros((*image.shape, 3), dtype=np.uint8)
@@ -212,8 +213,14 @@ def save_instance_by_colors(loader, model, folder, device="cuda", three_d=False)
             predicted_classes = predict_classes(preds).cpu().numpy()
         labeled_preds =get_cell_instances(predicted_classes[0], three_d=three_d)
         gt = y[0].cpu().numpy().astype(np.uint8)
-        colored_instance_preds = Image.fromarray(get_instance_color(labeled_preds))
-        colored_instance_gt = Image.fromarray(get_instance_color(gt))
+        if three_d:
+            middle_slice = labeled_preds.shape[1] // 2
+            colored_instance_preds = Image.fromarray(get_instance_color(labeled_preds[:, middle_slice]))
+            colored_instance_gt = Image.fromarray(get_instance_color(gt[:, middle_slice]))
+
+        else:
+            colored_instance_preds = Image.fromarray(get_instance_color(labeled_preds))
+            colored_instance_gt = Image.fromarray(get_instance_color(gt))
 
         colored_instance_preds.save(f"{folder}/pred_instances.png")
         colored_instance_gt.save(f"{folder}/gt_instances.png")
@@ -229,9 +236,9 @@ def save_predictions_as_imgs(loader, model, folder, device="cuda", three_d=False
             preds = model(x)
             predicted_classes = predict_classes(preds)
 
-        colored_preds = apply_color_map(predicted_classes).type(torch.uint8)
+        colored_preds = apply_color_map(predicted_classes, three_d=three_d).type(torch.uint8)
 
-        colored_gt = apply_color_map(Dataset.split_mask(y).long()).type(torch.uint8)
+        colored_gt = apply_color_map(Dataset.split_mask(y).long(), three_d=three_d).type(torch.uint8)
 
         for i in range(colored_preds.shape[0]):  # Loop through the batch
             # Permute and move to CPU

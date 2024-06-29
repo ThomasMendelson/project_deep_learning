@@ -1,0 +1,20 @@
+
+  0%|          | 0/30 [00:00<?, ?it/s]
+=> Loading checkpoint
+=> Checkpoint loaded successfully
+
+
+
+ 10%|█         | 3/30 [00:23<03:32,  7.85s/it, loss=0.959]
+Traceback (most recent call last):
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\train3D.py", line 217, in <module>
+    main()
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\train3D.py", line 150, in main
+    train_loss = train_fn(train_loader, model, optimizer, criterion, scaler)
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\train3D.py", line 69, in train_fn
+    targets = Dataset3D.split_mask(targets).long().to(device=DEVICE)
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\dataset3D.py", line 70, in split_mask
+    edges = Dataset3D.detect_edges(element_mask)
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\dataset3D.py", line 48, in detect_edges
+    gradient_z = torch.gradient(mask, dim=0)
+KeyboardInterrupt

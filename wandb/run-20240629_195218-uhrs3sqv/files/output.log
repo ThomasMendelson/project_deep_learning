@@ -1,0 +1,20 @@
+=> Loading checkpoint
+=> Checkpoint loaded successfully
+epoch: [1/50]
+=> saving images
+Traceback (most recent call last):
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\train3D.py", line 220, in <module>
+    main()
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\train3D.py", line 150, in main
+    save_predictions_as_imgs(loader=val_loader, model=model, folder="checkpoint/saved_images", device=DEVICE, three_d=True)
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\utils.py", line 254, in save_predictions_as_imgs
+    concatenated_img_pil.save(f"{folder}/pred_gt_{idx}_{i}.png")
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\venv\lib\site-packages\PIL\Image.py", line 2459, in save
+    save_handler(self, fp, filename)
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\venv\lib\site-packages\PIL\PngImagePlugin.py", line 1412, in _save
+    ImageFile._save(im, _idat(fp, chunk), [("zip", (0, 0) + im.size, 0, rawmode)])
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\venv\lib\site-packages\PIL\ImageFile.py", line 540, in _save
+    _encode_tile(im, fp, tile, bufsize, None, exc)
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\venv\lib\site-packages\PIL\ImageFile.py", line 559, in _encode_tile
+    errcode, data = encoder.encode(bufsize)[1:]
+KeyboardInterrupt

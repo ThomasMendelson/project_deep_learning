@@ -1,0 +1,63 @@
+=> Loading checkpoint
+Error: Failed to load checkpoint - Error(s) in loading state_dict for UNET3D:
+	Missing key(s) in state_dict: "ups.6.weight", "ups.6.bias", "ups.7.conv.0.weight", "ups.7.conv.1.weight", "ups.7.conv.1.bias", "ups.7.conv.1.running_mean", "ups.7.conv.1.running_var", "ups.7.conv.3.weight", "ups.7.conv.4.weight", "ups.7.conv.4.bias", "ups.7.conv.4.running_mean", "ups.7.conv.4.running_var", "downs.3.conv.0.weight", "downs.3.conv.1.weight", "downs.3.conv.1.bias", "downs.3.conv.1.running_mean", "downs.3.conv.1.running_var", "downs.3.conv.3.weight", "downs.3.conv.4.weight", "downs.3.conv.4.bias", "downs.3.conv.4.running_mean", "downs.3.conv.4.running_var".
+	size mismatch for ups.0.weight: copying a param with shape torch.Size([32, 16, 2, 2, 2]) from checkpoint, the shape in current model is torch.Size([64, 32, 2, 2, 2]).
+	size mismatch for ups.0.bias: copying a param with shape torch.Size([16]) from checkpoint, the shape in current model is torch.Size([32]).
+	size mismatch for ups.1.conv.0.weight: copying a param with shape torch.Size([16, 32, 3, 3, 3]) from checkpoint, the shape in current model is torch.Size([32, 64, 3, 3, 3]).
+	size mismatch for ups.1.conv.1.weight: copying a param with shape torch.Size([16]) from checkpoint, the shape in current model is torch.Size([32]).
+	size mismatch for ups.1.conv.1.bias: copying a param with shape torch.Size([16]) from checkpoint, the shape in current model is torch.Size([32]).
+	size mismatch for ups.1.conv.1.running_mean: copying a param with shape torch.Size([16]) from checkpoint, the shape in current model is torch.Size([32]).
+	size mismatch for ups.1.conv.1.running_var: copying a param with shape torch.Size([16]) from checkpoint, the shape in current model is torch.Size([32]).
+	size mismatch for ups.1.conv.3.weight: copying a param with shape torch.Size([16, 16, 3, 3, 3]) from checkpoint, the shape in current model is torch.Size([32, 32, 3, 3, 3]).
+	size mismatch for ups.1.conv.4.weight: copying a param with shape torch.Size([16]) from checkpoint, the shape in current model is torch.Size([32]).
+	size mismatch for ups.1.conv.4.bias: copying a param with shape torch.Size([16]) from checkpoint, the shape in current model is torch.Size([32]).
+	size mismatch for ups.1.conv.4.running_mean: copying a param with shape torch.Size([16]) from checkpoint, the shape in current model is torch.Size([32]).
+	size mismatch for ups.1.conv.4.running_var: copying a param with shape torch.Size([16]) from checkpoint, the shape in current model is torch.Size([32]).
+	size mismatch for ups.2.weight: copying a param with shape torch.Size([16, 8, 2, 2, 2]) from checkpoint, the shape in current model is torch.Size([32, 16, 2, 2, 2]).
+	size mismatch for ups.2.bias: copying a param with shape torch.Size([8]) from checkpoint, the shape in current model is torch.Size([16]).
+	size mismatch for ups.3.conv.0.weight: copying a param with shape torch.Size([8, 16, 3, 3, 3]) from checkpoint, the shape in current model is torch.Size([16, 32, 3, 3, 3]).
+	size mismatch for ups.3.conv.1.weight: copying a param with shape torch.Size([8]) from checkpoint, the shape in current model is torch.Size([16]).
+	size mismatch for ups.3.conv.1.bias: copying a param with shape torch.Size([8]) from checkpoint, the shape in current model is torch.Size([16]).
+	size mismatch for ups.3.conv.1.running_mean: copying a param with shape torch.Size([8]) from checkpoint, the shape in current model is torch.Size([16]).
+	size mismatch for ups.3.conv.1.running_var: copying a param with shape torch.Size([8]) from checkpoint, the shape in current model is torch.Size([16]).
+	size mismatch for ups.3.conv.3.weight: copying a param with shape torch.Size([8, 8, 3, 3, 3]) from checkpoint, the shape in current model is torch.Size([16, 16, 3, 3, 3]).
+	size mismatch for ups.3.conv.4.weight: copying a param with shape torch.Size([8]) from checkpoint, the shape in current model is torch.Size([16]).
+	size mismatch for ups.3.conv.4.bias: copying a param with shape torch.Size([8]) from checkpoint, the shape in current model is torch.Size([16]).
+	size mismatch for ups.3.conv.4.running_mean: copying a param with shape torch.Size([8]) from checkpoint, the shape in current model is torch.Size([16]).
+	size mismatch for ups.3.conv.4.running_var: copying a param with shape torch.Size([8]) from checkpoint, the shape in current model is torch.Size([16]).
+	size mismatch for ups.4.weight: copying a param with shape torch.Size([8, 4, 2, 2, 2]) from checkpoint, the shape in current model is torch.Size([16, 8, 2, 2, 2]).
+	size mismatch for ups.4.bias: copying a param with shape torch.Size([4]) from checkpoint, the shape in current model is torch.Size([8]).
+	size mismatch for ups.5.conv.0.weight: copying a param with shape torch.Size([4, 8, 3, 3, 3]) from checkpoint, the shape in current model is torch.Size([8, 16, 3, 3, 3]).
+	size mismatch for ups.5.conv.1.weight: copying a param with shape torch.Size([4]) from checkpoint, the shape in current model is torch.Size([8]).
+	size mismatch for ups.5.conv.1.bias: copying a param with shape torch.Size([4]) from checkpoint, the shape in current model is torch.Size([8]).
+	size mismatch for ups.5.conv.1.running_mean: copying a param with shape torch.Size([4]) from checkpoint, the shape in current model is torch.Size([8]).
+	size mismatch for ups.5.conv.1.running_var: copying a param with shape torch.Size([4]) from checkpoint, the shape in current model is torch.Size([8]).
+	size mismatch for ups.5.conv.3.weight: copying a param with shape torch.Size([4, 4, 3, 3, 3]) from checkpoint, the shape in current model is torch.Size([8, 8, 3, 3, 3]).
+	size mismatch for ups.5.conv.4.weight: copying a param with shape torch.Size([4]) from checkpoint, the shape in current model is torch.Size([8]).
+	size mismatch for ups.5.conv.4.bias: copying a param with shape torch.Size([4]) from checkpoint, the shape in current model is torch.Size([8]).
+	size mismatch for ups.5.conv.4.running_mean: copying a param with shape torch.Size([4]) from checkpoint, the shape in current model is torch.Size([8]).
+	size mismatch for ups.5.conv.4.running_var: copying a param with shape torch.Size([4]) from checkpoint, the shape in current model is torch.Size([8]).
+	size mismatch for bottleneck.conv.0.weight: copying a param with shape torch.Size([32, 16, 3, 3, 3]) from checkpoint, the shape in current model is torch.Size([64, 32, 3, 3, 3]).
+	size mismatch for bottleneck.conv.1.weight: copying a param with shape torch.Size([32]) from checkpoint, the shape in current model is torch.Size([64]).
+	size mismatch for bottleneck.conv.1.bias: copying a param with shape torch.Size([32]) from checkpoint, the shape in current model is torch.Size([64]).
+	size mismatch for bottleneck.conv.1.running_mean: copying a param with shape torch.Size([32]) from checkpoint, the shape in current model is torch.Size([64]).
+	size mismatch for bottleneck.conv.1.running_var: copying a param with shape torch.Size([32]) from checkpoint, the shape in current model is torch.Size([64]).
+	size mismatch for bottleneck.conv.3.weight: copying a param with shape torch.Size([32, 32, 3, 3, 3]) from checkpoint, the shape in current model is torch.Size([64, 64, 3, 3, 3]).
+	size mismatch for bottleneck.conv.4.weight: copying a param with shape torch.Size([32]) from checkpoint, the shape in current model is torch.Size([64]).
+	size mismatch for bottleneck.conv.4.bias: copying a param with shape torch.Size([32]) from checkpoint, the shape in current model is torch.Size([64]).
+	size mismatch for bottleneck.conv.4.running_mean: copying a param with shape torch.Size([32]) from checkpoint, the shape in current model is torch.Size([64]).
+	size mismatch for bottleneck.conv.4.running_var: copying a param with shape torch.Size([32]) from checkpoint, the shape in current model is torch.Size([64]).
+=> Checking accuracy
+  0%|          | 0/10 [00:16<?, ?it/s]
+Traceback (most recent call last):
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\train3D.py", line 217, in <module>
+    main()
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\train3D.py", line 143, in main
+    check_accuracy(val_loader, model, device=DEVICE, three_d=True)
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\utils.py", line 119, in check_accuracy
+    pred_labels_mask = get_cell_instances(predicted_classes[i], three_d=three_d)
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\utils.py", line 103, in get_cell_instances
+    labeled, max_num = ndimage.label(foreground_mask, structure=strel)
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\venv\lib\site-packages\scipy\ndimage\_measurements.py", line 183, in label
+    raise RuntimeError('structure and input must have equal rank')
+RuntimeError: structure and input must have equal rank

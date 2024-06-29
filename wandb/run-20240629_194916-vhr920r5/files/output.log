@@ -1,0 +1,14 @@
+=> Loading checkpoint
+=> Checkpoint loaded successfully
+epoch: [1/50]
+=> saving images
+Traceback (most recent call last):
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\train3D.py", line 220, in <module>
+    main()
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\train3D.py", line 150, in main
+    save_predictions_as_imgs(loader=val_loader, model=model, folder="checkpoint/saved_images", device=DEVICE)
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\utils.py", line 232, in save_predictions_as_imgs
+    colored_preds = apply_color_map(predicted_classes).type(torch.uint8)
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\utils.py", line 164, in apply_color_map
+    if input_tensor.dim() == 2:
+KeyboardInterrupt
