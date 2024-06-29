@@ -37,7 +37,7 @@ print(DEVICE)
 BATCH_SIZE = 4
 NUM_EPOCHS = 120
 NUM_WORKERS = 2
-CROP_SIZE = (32, 256, 256)
+CROP_SIZE = (16, 256, 256)
 CLASS_WEIGHTS = [0.1, 0.7, 0.2]  # [0.15, 0.6, 0.25]#   # [0.1, 0.6, 0.3]   # [0.15, 0.6, 0.25]
 PIN_MEMORY = False
 LOAD_MODEL = False

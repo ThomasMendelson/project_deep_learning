@@ -219,7 +219,7 @@ def save_instance_by_colors(loader, model, folder, device="cuda", three_d=False)
         colored_instance_gt.save(f"{folder}/gt_instances.png")
         break
 
-def save_predictions_as_imgs(loader, model, folder, device="cuda"):
+def save_predictions_as_imgs(loader, model, folder, device="cuda", three_d=False):
     print("=> saving images")
     model.eval()
     for idx, (x, y) in enumerate(loader):
@@ -235,8 +235,15 @@ def save_predictions_as_imgs(loader, model, folder, device="cuda"):
 
         for i in range(colored_preds.shape[0]):  # Loop through the batch
             # Permute and move to CPU
-            pred_img = colored_preds[i].permute(1, 2, 0).cpu().numpy()
-            gt_img = colored_gt[i].permute(1, 2, 0).cpu().numpy()
+            if three_d:
+                pred_img = colored_preds[i].permute(1, 2, 3, 0).cpu().numpy()
+                gt_img = colored_gt[i].permute(1, 2, 3, 0).cpu().numpy()
+                middle_slice = pred_img.shape[0]//2
+                pred_img = pred_img[middle_slice]
+                gt_img = gt_img[middle_slice]
+            else:
+                pred_img = colored_preds[i].permute(1, 2, 0).cpu().numpy()
+                gt_img = colored_gt[i].permute(1, 2, 0).cpu().numpy()
             separator_line = np.ones((pred_img.shape[0], 5, 3), dtype=np.uint8) * 255  # Red line
             concatenated_img = np.concatenate([pred_img, separator_line, gt_img], axis=1)
 

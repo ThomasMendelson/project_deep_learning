@@ -21,7 +21,8 @@ class DoubleConv3D(nn.Module):
 class UNET3D(nn.Module):
     def __init__(
             # self, in_channels=1, out_channels=3, features=[64, 128, 256, 512, 1024],
-            self, in_channels=1, out_channels=3, features=[64, 128, 256, 512],
+            # self, in_channels=1, out_channels=3, features=[64, 128, 256, 512],
+            self, in_channels=1, out_channels=3, features=[32, 64, 128],
     ):
         super(UNET3D, self).__init__()
         self.ups = nn.ModuleList()
