@@ -66,8 +66,6 @@ def train_fn(loader, model, optimizer, loss_fn, scaler):
         # forward
         with torch.cuda.amp.autocast():
             predictions = model(data)
-            # print(f"in train \npredictions shape: {predictions.shape}")
-            # print(f"in train \ntargets shape: {targets.shape}")
             loss = loss_fn(predictions, targets)
             # Add L1 regularization
             loss += calculate_l1_loss(model)

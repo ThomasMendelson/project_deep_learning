@@ -30,12 +30,10 @@ class Dataset3D(Dataset):
         if self.mask_dir is not None:
             img_path = os.path.join(self.image_dir, self.images[index])
             mask_path = os.path.join(self.mask_dir, self.images[index].replace("t", "man_seg", 1))
-            image = tiff.imread(img_path)
-            image = image.astype(np.float32)
+            image = tiff.imread(img_path).astype(np.float32)
             image = (image - image.mean()) / (image.std())
 
-            mask = tiff.imread(mask_path)
-            mask = mask.astype(np.float32)
+            mask = tiff.imread(mask_path).astype(np.float32)
 
             transform = self.get_transform()
             image, mask = transform(image=image, mask=mask)
@@ -62,7 +60,7 @@ class Dataset3D(Dataset):
 
     @staticmethod
     def split_mask(mask):
-        # mask: torch.Size([batch, 1, 5, 256, 256])
+        # mask: torch.Size([batch, 5, 256, 256])
         three_classes_mask = torch.zeros_like(mask, dtype=torch.int32)
         for batch_idx in range(mask.size()[0]):
             unique_elements = torch.unique(mask[batch_idx].flatten())
@@ -71,8 +69,8 @@ class Dataset3D(Dataset):
                     element_mask = (mask[batch_idx] == element).to(torch.int)
                     edges = Dataset3D.detect_edges(element_mask)
                     element_mask -= edges
-                    three_classes_mask[batch_idx][edges == 1] = 1
-                    three_classes_mask[batch_idx][element_mask == 1] = 2
+                    three_classes_mask[batch_idx][edges == 1] = 1         # edge
+                    three_classes_mask[batch_idx][element_mask == 1] = 2  # interior
 
         return three_classes_mask
 
@@ -126,7 +124,7 @@ class Dataset3D(Dataset):
                 mask = transforms(mask)
             return image, mask
 
-        def random_crop(image, mask, crop_size, num_crops=10, threshold=500):
+        def random_crop(image, mask, crop_size, threshold=500):
             depth, height, width = image.shape[-3:]
             crop_depth, crop_height, crop_width = crop_size
 
