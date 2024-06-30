@@ -16,12 +16,13 @@ import numpy as np
 
 
 class Dataset3D(Dataset):
-    def __init__(self, image_dir, crop_size, mask_dir=None, train_aug=False):
+    def __init__(self, image_dir, crop_size, device, mask_dir=None, train_aug=False):
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.train_aug = train_aug
         self.images = os.listdir(image_dir)
         self.crop_size = crop_size
+        self.device = device
 
     def __len__(self):
         return len(self.images)
@@ -43,14 +44,9 @@ class Dataset3D(Dataset):
     @staticmethod
     def detect_edges(mask, threshold=0.25):
         # Compute the gradients along rows and columns
-        gradient_x = torch.gradient(mask, dim=2)
-        gradient_y = torch.gradient(mask, dim=1)
-        gradient_z = torch.gradient(mask, dim=0)
-
-        # Extract gradient components from the tuple
-        gradient_x = gradient_x[0]
-        gradient_y = gradient_y[0]
-        gradient_z = gradient_z[0]
+        gradient_x = torch.gradient(mask, dim=2)[0]
+        gradient_y = torch.gradient(mask, dim=1)[0]
+        gradient_z = torch.gradient(mask, dim=0)[0]
 
         gradient_magnitude = torch.sqrt(gradient_x ** 2 + gradient_y ** 2 + gradient_z ** 2)
         masked_gradient_magnitude = gradient_magnitude * mask
@@ -60,7 +56,7 @@ class Dataset3D(Dataset):
 
     @staticmethod
     def split_mask(mask):
-        # mask: torch.Size([batch, 5, 256, 256])
+        # mask: torch.Size([batch, D, H, W])
         three_classes_mask = torch.zeros_like(mask, dtype=torch.int32)
         for batch_idx in range(mask.size()[0]):
             unique_elements = torch.unique(mask[batch_idx].flatten())
@@ -147,6 +143,7 @@ class Dataset3D(Dataset):
             return cropped_image, cropped_mask
 
         def to_tensor(image, mask):
+            # image, mask = torch.from_numpy(image).to(self.device), torch.from_numpy(mask).to(self.device)
             image, mask = torch.from_numpy(image), torch.from_numpy(mask)
             return image.unsqueeze(0), mask.unsqueeze(0)
 

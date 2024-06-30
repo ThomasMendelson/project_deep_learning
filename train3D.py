@@ -9,6 +9,7 @@ from PIL import Image
 
 # import albumentations as A
 from model3D import UNET3D
+from model3D_2 import UNet3D as UNet3D_2
 # from albumentations.pytorch import ToTensorV2
 from dataset3D import Dataset3D
 
@@ -32,7 +33,7 @@ from utils import (
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-3
 L1_LAMBDA = 1e-5
-DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
 print(DEVICE)
 BATCH_SIZE = 4
 NUM_EPOCHS = 120
@@ -41,7 +42,7 @@ CROP_SIZE = (16, 256, 256)
 CLASS_WEIGHTS = [0.1, 0.7, 0.2]  # [0.15, 0.6, 0.25]#   # [0.1, 0.6, 0.3]   # [0.15, 0.6, 0.25]
 PIN_MEMORY = False
 LOAD_MODEL = False
-WANDB_TRACKING = True
+WANDB_TRACKING = False
 TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02"
 TRAIN_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02_ERR_SEG"
 VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01"
@@ -61,7 +62,7 @@ def train_fn(loader, model, optimizer, loss_fn, scaler):
     for batch_idx, (data, targets) in enumerate(loop):
         # print(f"in train \ndata shape: {data.shape}")
         data = data.to(device=DEVICE)
-        targets = Dataset3D.split_mask(targets).long().to(device=DEVICE)
+        targets = Dataset3D.split_mask(targets.to(device=DEVICE)).long()
 
         # forward
         with torch.cuda.amp.autocast():
@@ -85,11 +86,12 @@ def train_fn(loader, model, optimizer, loss_fn, scaler):
 
 
 def evaluate_fn(loader, model, loss_fn):
+    loop = tqdm(loader)
     model.eval()
     total_loss = 0.0
 
     with torch.no_grad():
-        for data, targets in loader:
+        for data, targets in loop:
             data = data.to(device=DEVICE)
 
             targets = Dataset3D.split_mask(targets).long().to(device=DEVICE)
@@ -117,21 +119,23 @@ def main():
                        "img_size": CROP_SIZE,
                    })
 
-    model = UNET3D(in_channels=1, out_channels=3).to(DEVICE)
+    # model = UNET3D(in_channels=1, out_channels=3).to(DEVICE)
+    model = UNet3D_2(in_channels=1, num_classes=3).to(DEVICE)
+
     class_weights = torch.FloatTensor(CLASS_WEIGHTS).to(DEVICE)
     criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     train_loader = get_loader(dir=TRAIN_IMG_DIR, maskdir=TRAIN_MASK_DIR, train_aug=True, shuffle=True,
                               batch_size=BATCH_SIZE, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                              pin_memory=PIN_MEMORY, three_d=True)
+                              pin_memory=PIN_MEMORY, three_d=True, device=DEVICE)
     val_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=False,
                             batch_size=BATCH_SIZE, crop_size=CROP_SIZE, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
-                            three_d=True)
+                            three_d=True, device=DEVICE)
 
     test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=False,
                                             batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                                            pin_memory=PIN_MEMORY, three_d=True)
+                                            pin_memory=PIN_MEMORY, three_d=True, device=DEVICE)
 
     if LOAD_MODEL:
         load_checkpoint(torch.load("checkpoint/my_checkpoint.pth.tar", map_location=torch.device(DEVICE)), model)
@@ -178,7 +182,7 @@ def t_acc():
 
     test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=True,
                                             batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                                            pin_memory=PIN_MEMORY, three_d=True)
+                                            pin_memory=PIN_MEMORY, three_d=True, device=DEVICE)
     check_accuracy(test_check_accuracy_loader, model, device=DEVICE, one_image=False, three_d=True)
 
 
@@ -191,7 +195,7 @@ def t_acc_mul_models():
 
     test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=True,
                                             batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                                            pin_memory=PIN_MEMORY, three_d=True)
+                                            pin_memory=PIN_MEMORY, three_d=True, device=DEVICE)
     check_accuracy_multy_models(test_check_accuracy_loader, [model1], device=DEVICE, one_image=False, three_d=True)
     check_accuracy_multy_models(test_check_accuracy_loader, [model2], device=DEVICE, one_image=False, three_d=True)
     check_accuracy_multy_models(test_check_accuracy_loader, [model1, model2], device=DEVICE, one_image=False,
@@ -204,7 +208,7 @@ def t_save_instance_by_colors():
 
     loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=True,
                         batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                        pin_memory=PIN_MEMORY, three_d=True)
+                        pin_memory=PIN_MEMORY, three_d=True, device=DEVICE)
     save_instance_by_colors(loader, model, folder="checkpoint", device=DEVICE, three_d=True)
 
 

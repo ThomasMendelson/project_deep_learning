@@ -50,6 +50,7 @@ def get_loader(
         shuffle,
         batch_size,
         crop_size,
+        device,
         num_workers=0,
         pin_memory=True,
         three_d=False,
@@ -75,7 +76,8 @@ def get_loader(
             image_dir=dir,
             mask_dir=maskdir,
             crop_size=crop_size,
-            train_aug=train_aug
+            train_aug=train_aug,
+            device=device,
         )
         loader = DataLoader(
             ds,
@@ -94,8 +96,8 @@ def get_loader(
 
 def get_cell_instances(input_np, three_d=False):
     if three_d:
-        strel = np.zeros([3, 3, 3, 3, 3])
-        strel[1][1] = np.array([[[0, 0, 0], [0, 1, 0], [0, 0, 0]], [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
+        # strel = np.zeros([3, 3, 3, 3, 3])
+        strel= np.array([[[0, 0, 0], [0, 1, 0], [0, 0, 0]], [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
                                 [[0, 0, 0], [0, 1, 0], [0, 0, 0]]])
     else:
         strel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]])
@@ -322,5 +324,4 @@ def calc_SEG_measure(pred_labels_mask, gt_labels_mask):
 
     SEG_measure_avg = np.average(SEG_measure_array)
     return SEG_measure_avg, SEG_measure_array
-
 

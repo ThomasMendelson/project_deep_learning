@@ -37,7 +37,7 @@ BATCH_SIZE = 2
 NUM_EPOCHS = 120
 NUM_WORKERS = 2
 CROP_SIZE = 256
-CLASS_WEIGHTS = [0.1, 0.7, 0.2]#  #  #   # [0.1, 0.6, 0.3]   # [0.15, 0.6, 0.25]
+CLASS_WEIGHTS = [0.1, 0.7, 0.2]  # #  #   # [0.1, 0.6, 0.3]   # [0.15, 0.6, 0.25]
 PIN_MEMORY = False
 LOAD_MODEL = False
 WANDB_TRACKING = False
@@ -45,6 +45,7 @@ TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02"  # "Fluo-N2DH-SI
 TRAIN_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02_ERR_SEG"
 VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/01"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01"
 VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/01_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01_ERR_SEG"
+
 
 # VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02"
 # VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02_GT/SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02_ERR_SEG"
@@ -55,6 +56,7 @@ VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/01_GT/SEG"  # "Fluo-N
 def calculate_l1_loss(model):
     l1_loss = sum(torch.sum(torch.abs(param)) for param in model.parameters())
     return L1_LAMBDA * l1_loss
+
 
 def train_fn(loader, model, optimizer, loss_fn, scaler):
     loop = tqdm(loader)
@@ -128,13 +130,14 @@ def main():
 
     train_loader = get_loader(dir=TRAIN_IMG_DIR, maskdir=TRAIN_MASK_DIR, train_aug=True, shuffle=True,
                               batch_size=BATCH_SIZE, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                              pin_memory=PIN_MEMORY)
+                              pin_memory=PIN_MEMORY, device=DEVICE)
     val_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=False,
-                            batch_size=BATCH_SIZE, crop_size=CROP_SIZE, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY)
+                            batch_size=BATCH_SIZE, crop_size=CROP_SIZE, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
+                            device=DEVICE)
 
     test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=False,
                                             batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                                            pin_memory=PIN_MEMORY)
+                                            pin_memory=PIN_MEMORY, device=DEVICE)
 
     if LOAD_MODEL:
         load_checkpoint(torch.load("checkpoint/my_checkpoint.pth.tar", map_location=torch.device(DEVICE)), model)
@@ -151,7 +154,7 @@ def main():
         if WANDB_TRACKING:
             wandb.log({"Train Loss": train_loss, "Val Loss": val_loss})
 
-        if (epoch+1) % 10 == 0:
+        if (epoch + 1) % 10 == 0:
             # save model
             checkpoint = {
                 "state_dict": model.state_dict(),
@@ -181,7 +184,7 @@ def t_acc():
 
     test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=True,
                                             batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                                            pin_memory=PIN_MEMORY)
+                                            pin_memory=PIN_MEMORY, device=DEVICE)
     check_accuracy(test_check_accuracy_loader, model, device=DEVICE, one_image=False)
 
 
@@ -194,11 +197,10 @@ def t_acc_mul_models():
 
     test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=True,
                                             batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                                            pin_memory=PIN_MEMORY)
+                                            pin_memory=PIN_MEMORY, device=DEVICE)
     check_accuracy_multy_models(test_check_accuracy_loader, [model1], device=DEVICE, one_image=False)
     check_accuracy_multy_models(test_check_accuracy_loader, [model2], device=DEVICE, one_image=False)
     check_accuracy_multy_models(test_check_accuracy_loader, [model1, model2], device=DEVICE, one_image=False)
-
 
 
 def t_save_instance_by_colors():
@@ -207,7 +209,7 @@ def t_save_instance_by_colors():
 
     loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=True,
                         batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                        pin_memory=PIN_MEMORY)
+                        pin_memory=PIN_MEMORY, device=DEVICE)
     save_instance_by_colors(loader, model, folder="checkpoint", device=DEVICE)
 
 
