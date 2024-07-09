@@ -147,6 +147,17 @@ class Dataset3D(Dataset):
             image, mask = torch.from_numpy(image), torch.from_numpy(mask)
             return image.unsqueeze(0), mask.unsqueeze(0)
 
+        def val_tensor(image, mask):
+            depth = image.shape[-3]
+            transforms = tio.Compose([
+                tio.Resize(target_shape=(256, 256, depth)),  # Horizontal
+            ])
+            image = transforms(image)
+            mask = transforms(mask)
+            print(f"Image.shape: {image.shape}")
+            print(f"mask.shape: {mask.shape}")
+            return image, mask
+
         def transform(image, mask):
             image, mask = to_tensor(image, mask)
             if self.train_aug:
@@ -154,6 +165,8 @@ class Dataset3D(Dataset):
                 image, mask = horizontal_flip(image, mask, p=0.5)
                 image, mask = vertical_flip(image, mask, p=0.5)
                 image, mask = depth_flip(image, mask, p=0.5)
+                image, mask = random_crop(image, mask, crop_size=self.crop_size)
+            else:
                 image, mask = random_crop(image, mask, crop_size=self.crop_size)
             return image, mask.squeeze(0)
 
@@ -241,6 +254,7 @@ def get_transform(train_aug):
         image, mask = torch.from_numpy(image), torch.from_numpy(mask)
         return image.unsqueeze(0), mask.unsqueeze(0)
 
+
     def transform(image, mask):
         image, mask = to_tensor(image, mask)
         if train_aug:
@@ -249,7 +263,9 @@ def get_transform(train_aug):
             image, mask = vertical_flip(image, mask, p=0.5)
             image, mask = depth_flip(image, mask, p=0.5)
             image, mask = random_crop(image, mask, crop_size=(5, 256, 256))
-        return image, mask
+        else:
+            image, mask = random_crop(image, mask, crop_size=(5, 256, 256))
+        return image, mask.squeeze(0)
 
     return transform
 
@@ -272,12 +288,17 @@ def get_instance_color(image):
 
 
 def t_transform():
-    train_aug = True
+    train_aug = False
     # get mask
     # img_path = "/media/rrtammyfs/labDatabase/CellTrackingChallenge/Training/Fluo-N3DH-SIM+/01/t070.tif"
     # mask_path ="/media/rrtammyfs/labDatabase/CellTrackingChallenge/Training/Fluo-N3DH-SIM+/01_GT/SEG/man_seg070.tif"
     mask_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG/man_seg070.tif"
     img_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01/t070.tif"
+
+    # Aviv
+    # mask_path = r"C:\Users\beaviv\PycharmProjects\ImageProcessing\Datasets\Fluo-N3DH-SIM+\01_GT\SEG\man_seg070.tif"
+    # img_path = r"C:\Users\beaviv\PycharmProjects\ImageProcessing\Datasets\Fluo-N3DH-SIM+\01\t070.tif"
+
     image = tiff.imread(img_path).astype(np.float32)
     mask = tiff.imread(mask_path).astype(np.float32)
 
@@ -286,37 +307,37 @@ def t_transform():
     transform = get_transform(train_aug)
     tras_image, tras_mask = transform(image=image, mask=mask)
 
-    image_middle_index = tras_image.shape[1] // 2
-
-    ffig, axs = plt.subplots(2, 5, figsize=(15, 5))
-    for i in range(5):
-        axs[0, i].imshow(tras_image[0, image_middle_index - 2 + i], cmap='gray')
-        axs[0, i].set_title(f"{i - 2}")
-        axs[0, i].axis('off')  # Hide the axes
-        axs[1, i].imshow(tras_mask[0, image_middle_index - 2 + i], cmap='gray')
-        axs[1, i].set_title(f"{i - 2}")
-        axs[1, i].axis('off')  # Hide the axes
-
-    # Adjust spacing between plots
-    ffig.suptitle("crop aug", fontsize=16)
-    plt.tight_layout()
-    plt.show()
-
-    ffig, axs = plt.subplots(1, 3, figsize=(15, 5))
-    axs[0].imshow(image[image_middle_index], cmap='gray')
-    axs[0].set_title(f"original image middle slice")
-    axs[0].axis('off')  # Hide the axes
-    axs[1].imshow(tras_image[0, image_middle_index], cmap='gray')
-    axs[1].set_title(f"affine image middle slice")
-    axs[1].axis('off')  # Hide the axes
-    axs[2].imshow(tras_mask[0, image_middle_index], cmap='gray')
-    axs[2].set_title(f"affine mask middle slice")
-    axs[2].axis('off')  # Hide the axes
-
-    # Adjust spacing between plots
-    # ffig.suptitle("all aug", fontsize=16)
-    plt.tight_layout()
-    plt.show()
+    # image_middle_index = tras_image.shape[1] // 2
+    #
+    # ffig, axs = plt.subplots(2, 5, figsize=(15, 5))
+    # for i in range(5):
+    #     axs[0, i].imshow(tras_image[0, image_middle_index - 2 + i], cmap='gray')
+    #     axs[0, i].set_title(f"{i - 2}")
+    #     axs[0, i].axis('off')  # Hide the axes
+    #     axs[1, i].imshow(tras_mask[0, image_middle_index - 2 + i], cmap='gray')
+    #     axs[1, i].set_title(f"{i - 2}")
+    #     axs[1, i].axis('off')  # Hide the axes
+    #
+    # # Adjust spacing between plots
+    # ffig.suptitle("crop aug", fontsize=16)
+    # plt.tight_layout()
+    # plt.show()
+    #
+    # ffig, axs = plt.subplots(1, 3, figsize=(15, 5))
+    # axs[0].imshow(image[image_middle_index], cmap='gray')
+    # axs[0].set_title(f"original image middle slice")
+    # axs[0].axis('off')  # Hide the axes
+    # axs[1].imshow(tras_image[0, image_middle_index], cmap='gray')
+    # axs[1].set_title(f"affine image middle slice")
+    # axs[1].axis('off')  # Hide the axes
+    # axs[2].imshow(tras_mask[0, image_middle_index], cmap='gray')
+    # axs[2].set_title(f"affine mask middle slice")
+    # axs[2].axis('off')  # Hide the axes
+    #
+    # # Adjust spacing between plots
+    # # ffig.suptitle("all aug", fontsize=16)
+    # plt.tight_layout()
+    # plt.show()
 
 
 

@@ -1,0 +1,278 @@
+
+  0%|          | 0/30 [00:00<?, ?it/s]
+=> Loading checkpoint
+=> Checkpoint loaded successfully
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+100%|██████████| 30/30 [01:09<00:00,  2.31s/it, loss=0.907]
+epoch: [2/50]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+100%|██████████| 30/30 [01:13<00:00,  2.45s/it, loss=0.914]
+epoch: [3/50]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+100%|██████████| 30/30 [01:15<00:00,  2.52s/it, loss=0.906]
+epoch: [4/50]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+100%|██████████| 30/30 [01:13<00:00,  2.44s/it, loss=0.985]
+epoch: [5/50]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+100%|██████████| 30/30 [01:15<00:00,  2.53s/it, loss=0.952]
+  0%|          | 0/30 [00:00<?, ?it/s]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+100%|██████████| 30/30 [01:03<00:00,  2.12s/it, loss=0.879]
+  0%|          | 0/30 [00:00<?, ?it/s]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+100%|██████████| 30/30 [01:10<00:00,  2.33s/it, loss=0.95]
+  0%|          | 0/30 [00:00<?, ?it/s]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+100%|██████████| 30/30 [01:21<00:00,  2.70s/it, loss=0.87]
+  0%|          | 0/30 [00:00<?, ?it/s]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+100%|██████████| 30/30 [01:11<00:00,  2.39s/it, loss=0.867]
+  0%|          | 0/30 [00:00<?, ?it/s]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+100%|██████████| 30/30 [01:13<00:00,  2.44s/it, loss=0.931]
+=> Saving checkpoint
+=> saving images
+Traceback (most recent call last):
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\train3D.py", line 217, in <module>
+    main()
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\train3D.py", line 165, in main
+    save_predictions_as_imgs(loader=val_loader, model=model, folder="checkpoint/saved_images", device=DEVICE)
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\utils.py", line 232, in save_predictions_as_imgs
+    colored_preds = apply_color_map(predicted_classes).type(torch.uint8)
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\utils.py", line 178, in apply_color_map
+    return output_tensor.permute(0, 3, 1, 2)
+RuntimeError: permute(sparse_coo): number of dimensions in the tensor input does not match the length of the desired ordering of dimensions i.e. input.dim() = 5 is not equal to len(dims) = 4

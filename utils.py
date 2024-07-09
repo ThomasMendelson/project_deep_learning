@@ -6,6 +6,7 @@ from PIL import Image
 import numpy as np
 from scipy import ndimage
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import torch.nn.functional as F
 import torchvision.utils as vutils
 from tqdm import tqdm
@@ -89,15 +90,12 @@ def get_loader(
             # collate_fn=custom_collate_fn,
         )
 
-
-
     return loader
 
 
 def get_cell_instances(input_np, three_d=False):
     if three_d:
-        # strel = np.zeros([3, 3, 3, 3, 3])
-        strel= np.array([[[0, 0, 0], [0, 1, 0], [0, 0, 0]], [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
+        strel = np.array([[[0, 0, 0], [0, 1, 0], [0, 0, 0]], [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
                                 [[0, 0, 0], [0, 1, 0], [0, 0, 0]]])
     else:
         strel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]])
@@ -120,9 +118,10 @@ def check_accuracy(loader, model, device="cuda", one_image=False, three_d=False)
             for i in range(predicted_classes.shape[0]):
                 pred_labels_mask = get_cell_instances(predicted_classes[i], three_d=three_d)
                 accuracy, _ = calc_SEG_measure(pred_labels_mask, gt[i])
-                seg += accuracy
-                num_iters += 1
-                if one_image:
+                if accuracy != -1:
+                    seg += accuracy
+                    num_iters += 1
+                if one_image and num_iters == 1:
                     print(f"seg score for one image: {seg / num_iters}")
                     model.train()
                     return
@@ -147,9 +146,11 @@ def check_accuracy_multy_models(loader, models, device="cuda", one_image=False, 
             for i in range(predicted_classes.shape[0]):
                 pred_labels_mask = get_cell_instances(predicted_classes[i], three_d=three_d)
                 accuracy, _ = calc_SEG_measure(pred_labels_mask, gt[i])
-                seg += accuracy
-                num_iters += 1
-                if one_image:
+                if accuracy != -1:
+                    seg += accuracy
+                    num_iters += 1
+
+                if one_image and num_iters == 1:
                     print(f"seg score for avg models and one image: {seg / num_iters}")
                     for model in models:
                         model.train()
@@ -191,7 +192,7 @@ def get_instance_color(image):
     unique_labels = unique_labels[unique_labels != 0]  # Remove background label if present
 
     # Generate a unique color for each label
-    color_map = plt.cm.get_cmap('hsv', len(unique_labels))
+    color_map = plt.get_cmap('hsv', len(unique_labels))
 
     # Create an empty color image
     colored_image = np.zeros((*image.shape, 3), dtype=np.uint8)
@@ -214,8 +215,14 @@ def save_instance_by_colors(loader, model, folder, device="cuda", three_d=False)
             predicted_classes = predict_classes(preds).cpu().numpy()
         labeled_preds =get_cell_instances(predicted_classes[0], three_d=three_d)
         gt = y[0].cpu().numpy().astype(np.uint8)
-        colored_instance_preds = Image.fromarray(get_instance_color(labeled_preds))
-        colored_instance_gt = Image.fromarray(get_instance_color(gt))
+        if three_d:
+            middle_slice = labeled_preds.shape[1] // 2
+            colored_instance_preds = Image.fromarray(get_instance_color(labeled_preds[:, middle_slice]))
+            colored_instance_gt = Image.fromarray(get_instance_color(gt[:, middle_slice]))
+
+        else:
+            colored_instance_preds = Image.fromarray(get_instance_color(labeled_preds))
+            colored_instance_gt = Image.fromarray(get_instance_color(gt))
 
         colored_instance_preds.save(f"{folder}/pred_instances.png")
         colored_instance_gt.save(f"{folder}/gt_instances.png")
@@ -231,9 +238,9 @@ def save_predictions_as_imgs(loader, model, folder, device="cuda", three_d=False
             preds = model(x)
             predicted_classes = predict_classes(preds)
 
-        colored_preds = apply_color_map(predicted_classes).type(torch.uint8)
+        colored_preds = apply_color_map(predicted_classes, three_d=three_d).type(torch.uint8)
 
-        colored_gt = apply_color_map(Dataset.split_mask(y).long()).type(torch.uint8)
+        colored_gt = apply_color_map(Dataset.split_mask(y).long(), three_d=three_d).type(torch.uint8)
 
         for i in range(colored_preds.shape[0]):  # Loop through the batch
             # Permute and move to CPU
@@ -307,21 +314,30 @@ def calc_SEG_measure(pred_labels_mask, gt_labels_mask):
     binary_masks_predicted = separate_masks(pred_labels_mask)
     binary_masks_gt = separate_masks(gt_labels_mask)
 
-    SEG_measure_array = np.zeros(len(binary_masks_gt))
-    if not binary_masks_predicted:
-        return 0, SEG_measure_array
+    len_binary_masks_gt = len(binary_masks_gt)
+    if len_binary_masks_gt == 0:
+        return -1, np.zeros(len_binary_masks_gt)
+    SEG_measure_array = np.zeros(len_binary_masks_gt)
     for i, r in enumerate(binary_masks_gt):
+        r_or_s = None
+        r_and_s = None
         # find match |R and S| > 0.5|R|
         for s in binary_masks_predicted:
             r_and_s = np.logical_and(r, s)
             if np.sum(r_and_s) > 0.5 * np.sum(r):
                 # match !
+                r_or_s = np.logical_or(r, s)
                 break
 
         # calc Jaccard similarity index
-        j_similarity = np.sum(r_and_s) / np.sum(np.logical_or(r, s))
-        SEG_measure_array[i] = j_similarity
+        if r_or_s is not None:
+            j_similarity = np.sum(r_and_s) / np.sum(r_or_s)
+            SEG_measure_array[i] = j_similarity
+            if np.isnan(j_similarity):
+                print(f"np.sum(r_and_s): {np.sum(r_and_s)}, np.sum(r_or_s): {np.sum(r_or_s)}")
 
-    SEG_measure_avg = np.average(SEG_measure_array)
+    if np.any(np.isnan(SEG_measure_array)):
+        print("SEG_measure_array contains NaN values")
+    SEG_measure_avg = np.mean(SEG_measure_array)
     return SEG_measure_avg, SEG_measure_array
 

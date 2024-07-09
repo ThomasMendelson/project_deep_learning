@@ -21,9 +21,10 @@ class DoubleConv3D(nn.Module):
 class UNET3D(nn.Module):
     def __init__(
             # self, in_channels=1, out_channels=3, features=[64, 128, 256, 512, 1024],
-            # self, in_channels=1, out_channels=3, features=[64, 128, 256, 512],
-            self, in_channels=1, out_channels=3, features=[32, 64, 128],
+            self, in_channels=1, out_channels=3, features=[64, 128, 256],
+            # self, in_channels=1, out_channels=3, features=[64, 128, 256],
     ):
+
         super(UNET3D, self).__init__()
         self.ups = nn.ModuleList()
         self.downs = nn.ModuleList()
@@ -71,12 +72,15 @@ class UNET3D(nn.Module):
 
 
 def t():
-    x = torch.randn((2, 1, 32,  642, 652))
-    model = UNET3D(in_channels=1, out_channels=1)
-    preds = model(x)
-    print(preds.shape)
-    print(x.shape)
-    assert preds.shape == x.shape
+    DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
+    # x = torch.randn((16, 1, 16,  256, 256))
+    model = UNET3D(in_channels=1, out_channels=3).to(DEVICE)
+    # preds = model(x)
+    # print(preds.shape)
+    # print(x.shape)
+    # assert preds.shape == x.shape
+    summary(model, input_size=(16, 1, 16,  256, 256))
 
 if __name__ == "__main__":
+    from torchinfo import summary
     t()

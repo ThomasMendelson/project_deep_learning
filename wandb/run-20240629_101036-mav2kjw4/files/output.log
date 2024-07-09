@@ -1,0 +1,21 @@
+
+  0%|          | 0/30 [00:00<?, ?it/s]
+
+
+
+
+
+
+ 23%|██▎       | 7/30 [01:10<03:52, 10.12s/it, loss=1.27]
+Traceback (most recent call last):
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\train3D.py", line 216, in <module>
+    main()
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\train3D.py", line 149, in main
+    train_loss = train_fn(train_loader, model, optimizer, criterion, scaler)
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\project_deep_learning\train3D.py", line 79, in train_fn
+    scaler.scale(loss).backward()
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\venv\lib\site-packages\torch\_tensor.py", line 522, in backward
+    torch.autograd.backward(
+  File "C:\Users\beaviv\PycharmProjects\ImageProcessing\venv\lib\site-packages\torch\autograd\__init__.py", line 266, in backward
+    Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+RuntimeError: cuDNN error: CUDNN_STATUS_EXECUTION_FAILED
