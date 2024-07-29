@@ -33,12 +33,6 @@ class DconvBlock(nn.Module):
         return res
 
 
-
-
-
-
-
-
 # class ViTWithHiddenStates(ViT):
 #     def __init__(self, *args, **kwargs):
 #         super(ViTWithHiddenStates, self).__init__(*args, **kwargs)
@@ -135,6 +129,7 @@ class ViT_UNet(nn.Module):
             self.up3 = UpBlock3D(2 * 128, 64, 128)
             self.up4 = UpBlock3D(2 * 64, 32, 64)
             self.beforelast = UpBlock3D(2 * 32, 32, 32, True)
+            # self.beforelast = UpBlock3D(32, 32, 32, True)
             self.outc = nn.Conv3d(32, out_channels, kernel_size=1)
         else:
             self.doubleconv = UpBlock(1, 32, 16, True)
@@ -143,6 +138,7 @@ class ViT_UNet(nn.Module):
             self.up3 = UpBlock(2 * 128, 64, 128)
             self.up4 = UpBlock(2 * 64, 32, 64)
             self.beforelast = UpBlock(2 * 32, 32, 32, True)
+            # self.beforelast = UpBlock(32, 32, 32, True)
             self.outc = nn.Conv2d(32, out_channels, kernel_size=1)
 
     def reconstruct_image_from_patches(self, patches, img_size, patch_size):
@@ -202,7 +198,8 @@ class ViT_UNet(nn.Module):
                     - For 2D images: (batch_size, out_channels, H, W)
                """
 
-        images_to_skip_connections = self.reconstruct_image_from_patches(patches=hidden_state[-3:], img_size=img_size, patch_size=patch_size)
+        images_to_skip_connections = self.reconstruct_image_from_patches(patches=hidden_state[-3:], img_size=img_size,
+                                                                         patch_size=patch_size)
         skip_connections = []
 
         for i, image in enumerate(images_to_skip_connections):
@@ -226,18 +223,21 @@ class ViT_UNet(nn.Module):
             img_size = x.shape[-2:]
             x, skip_connections = self.vit(x.unsqueeze(0)), [self.doubleconv(x, None)]
 
-
         if isinstance(x, tuple):
             x, hidden_states_out = x
 
         x = self.reconstruct_image_from_patches(patches=x.unsqueeze(0), img_size=img_size, patch_size=16).squeeze(0)
         hidden_states_out = torch.stack(hidden_states_out, dim=0)
-        skip_connections = self.create_skip_connection(hidden_state=hidden_states_out, img_size=img_size, patch_size=16) + skip_connections
+        skip_connections = self.create_skip_connection(hidden_state=hidden_states_out, img_size=img_size,
+                                                       patch_size=16) + skip_connections
+        # skip_connections = self.create_skip_connection(hidden_state=hidden_states_out, img_size=img_size,
+        #                                                patch_size=16)
         x = self.up1(x, None)
         x = self.up2(x, skip_connections[0])
         x = self.up3(x, skip_connections[1])
         x = self.up4(x, skip_connections[2])
-        x = self.beforelast(x, skip_connections[3])
+        x = self.beforelast(x, skip_connections[3])  # to add back the skip connection from the image chage back lines: 131, 139, 231, 236
+        # x = self.beforelast(x, None)
         return self.outc(x)
 
 
@@ -251,12 +251,10 @@ if __name__ == "__main__":
 
     input_tensor2d = torch.rand((1, 1, 256, 256)).to(DEVICE)
     model2D = ViT_UNet(in_channels=1, out_channels=3, img_size=(1, 256, 256), patch_size=(1, 16, 16), hidden_size=512,
-                 mlp_dim=2048, num_layers=12, num_heads=8, proj_type="conv", dropout_rate=0.,
-                 classification=False, three_d=False, device=DEVICE).to(DEVICE)
+                       mlp_dim=2048, num_layers=12, num_heads=8, proj_type="conv", dropout_rate=0.,
+                       classification=False, three_d=False, device=DEVICE).to(DEVICE)
 
     # Input tensor (batch size of 2, 1 channel, 16x128x128 image)
-
-
 
     # Forward pass
     output2D = model2D(input_tensor2d)
@@ -275,7 +273,6 @@ if __name__ == "__main__":
     print(summary(model2D, depth=3, input_size=(1, 1, 256, 256), col_names=["input_size", "output_size", "num_params"],
                   device=DEVICE))
 
-
     model3D = ViT_UNet(in_channels=1, out_channels=3, img_size=(32, 128, 128), patch_size=16, hidden_size=512,
                        mlp_dim=2048, num_layers=12, num_heads=8, proj_type="conv", dropout_rate=0.,
                        classification=False, three_d=True, device=DEVICE).to(DEVICE)
@@ -293,7 +290,6 @@ if __name__ == "__main__":
 
     # Print the shape of the main output
     print(main_output3D.shape)  # Output shape will be (batch_size, num_patches, hidden_size)
-
 
     print("Summary for model3D:")
     print(summary(model3D, depth=3, input_size=(1, 1, 32, 128, 128),

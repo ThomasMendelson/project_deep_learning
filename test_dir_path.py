@@ -2,219 +2,358 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import tifffile as tiff
-# import os
-# import torch
-# checkpoint_dir = "checkpoint"
-# TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02"             # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02"
-# TRAIN_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02_ERR_SEG"    # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02_ERR_SEG"
-# VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/01"               # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01"
-# VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/01_ERR_SEG"      # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/01_ERR_SEG"
-#
-# print(f"{os.listdir(checkpoint_dir)} ,os.listdir(checkpoint_dir)")
-# print(f"{len(os.listdir(TRAIN_IMG_DIR))} ,os.listdir(TRAIN_IMG_DIR)")
-# print("cuda" if torch.cuda.is_available() else "cpu")
-#
-#
-# if torch.cuda.is_available():
-#     # torch.cuda.set_device(2)
-#     current_device = torch.cuda.current_device()
-#     print(f"Current CUDA device index: {current_device}")
-#     print(f"Current CUDA device name: {torch.cuda.get_device_name(current_device)}")
-# else:
-#     print("CUDA is not available.")
-
-
-
-
-# TRAIN_IMG_DIR = "/media/rrtammyfs/labDatabase/CellTrackingChallenge/Training/DIC-C2DH-HeLa/02/t067.tif"
-# TRAIN_SEG_DIR = "/media/rrtammyfs/labDatabase/CellTrackingChallenge/Training/DIC-C2DH-HeLa/02_GT/SEG/man_seg067.tif"
-# TRAIN_TRA_DIR = "/media/rrtammyfs/labDatabase/CellTrackingChallenge/Training/DIC-C2DH-HeLa/02_GT/TRA/man_track067.tif"
-# image = cv2.imread(TRAIN_IMG_DIR, cv2.IMREAD_UNCHANGED)
-# seg_mask = cv2.imread(TRAIN_SEG_DIR, cv2.IMREAD_UNCHANGED)
-# track_mask = cv2.imread(TRAIN_TRA_DIR, cv2.IMREAD_UNCHANGED)
-
-# image = image.astype(np.float32)
-# image = (image - image.mean()) / (image.std())
-#
-# plt.figure()
-# plt.imshow(image)
-# plt.axis('off')  # Hide axes
-# plt.title('original image')
-# plt.show()
-#
-# plt.figure()
-# plt.imshow(seg_mask)
-# plt.axis('off')  # Hide axes
-# plt.title('original seg mask')
-# plt.show()
-
-# plt.figure()
-# plt.imshow(track_mask)
-# plt.axis('off')  # Hide axes
-# plt.title('original track mask')
-# plt.show()
-
-# TRAIN_TRA_DIR = "/media/rrtammyfs/labDatabase/CellTrackingChallenge/Training/Fluo-N2DH-SIM+/02_GT/TRA/man_track140.tif"
-# track_mask = cv2.imread(TRAIN_TRA_DIR, cv2.IMREAD_UNCHANGED)
-# plt.figure()
-# plt.imshow(track_mask)
-# plt.axis('off')  # Hide axes
-# plt.title('original track mask')
-# plt.show()
-
-# image_3d_dir = "/media/rrtammyfs/labDatabase/CellTrackingChallenge/Training/Fluo-N3DH-SIM+/02_GT/SEG/man_seg079.tif"
-# image_3d = tiff.imread(image_3d_dir)
-# print(image_3d.shape)
-#
-# print(f"unique elements: \n{np.unique(image_3d)}")
-#
-#
-# middle_index = image_3d.shape[0] // 2
-# middle_slice = image_3d[middle_index]
-# print(f"middle_slice unique elements: \n{np.unique(middle_slice)}")
-
-# ffig, axs = plt.subplots(1, 5, figsize=(15, 5))
-# for i in range(5):
-#     axs[i].imshow(image_3d[middle_index-2+i], cmap='gray')
-#     axs[i].set_title(f"{i-2}")
-#     axs[i].axis('off')  # Hide the axes
-#
-# # Adjust spacing between plots
-# plt.tight_layout()
-# plt.show()
-
-# plt.imshow(middle_slice, cmap='gray')
-# plt.colorbar()
-# plt.title(f'Middle Slice (index: {middle_index})')
-# plt.show()
-
-# plt.figure()
-# plt.imshow(image_3d)
-# plt.axis('off')  # Hide axes
-# plt.title('original image 3d')
-# plt.show()
-
 import torch
-import torchio as tio
-#
-# class RandomCrop3D:
-#     def __init__(self, crop_shape, threshold=500):
-#         """
-#         Initialize the transform with the desired crop shape.
-#
-#         :param crop_shape: tuple of 3 integers (crop_depth, crop_height, crop_width)
-#         """
-#         self.crop_shape = crop_shape
-#         self.threshold = threshold
-#
-#     def __call__(self, image, mask):
-#         """
-#         Apply the random crop transform to the 3D tensor image.
-#
-#         :param image: torch tensor of shape (batch, depth, height, width)
-#         :param mask: torch tensor of shape (batch, depth, height, width)
-#         :return: cropped 3D tensor of shape crop_shape
-#         """
-#         depth, height, width = image.shape[-3:]
-#         crop_depth, crop_height, crop_width = self.crop_shape
-#
-#         if crop_depth > depth or crop_height > height or crop_width > width:
-#             raise ValueError("Crop shape is larger than the image dimensions")
-#
-#         while True:
-#             # Random starting points
-#             start_d = torch.randint(0, depth - crop_depth + 1, (1,)).item()
-#             start_h = torch.randint(0, height - crop_height + 1, (1,)).item()
-#             start_w = torch.randint(0, width - crop_width + 1, (1,)).item()
-#             # Crop the image
-#             cropped_image = image[:, start_d:start_d + crop_depth, start_h:start_h + crop_height, start_w:start_w + crop_width]
-#             cropped_mask = mask[:, start_d:start_d + crop_depth, start_h:start_h + crop_height, start_w:start_w + crop_width]
-#             if torch.sum(cropped_image > 0) > self.threshold * crop_depth:
-#                 print(f"depth: {depth}, height: {height}, width: {width}")
-#                 print(f"crop_depth: {crop_depth}, crop_height: {crop_height}, crop_width: {crop_width}")
-#                 print(f"start_d: {start_d}, start_h: {start_h}, start_w: {start_w}")
-#                 break
-#
-#         return cropped_image, cropped_mask
-#
-# image_dir = "/media/rrtammyfs/labDatabase/CellTrackingChallenge/Training/Fluo-N3DH-SIM+/02_GT/SEG/man_seg079.tif"
-# img_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01/t070.tif"
-# mask_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG/man_seg070.tif"
-#
-# image = tiff.imread(img_path).astype(np.float32)
-# image = (image - image.mean()) / (image.std())
-# mask = tiff.imread(mask_path).astype(np.float32)
-#
-# # image_middle_index = image.shape[0] // 2
-#
-# transforms = tio.Compose([
-#     tio.RandomFlip(axes=(0, 1, 2), flip_probability=0.5),  # Horizontal=2, vertical=1, depth=0 flip
-#     # tio.RandomFlip(axes=2, flip_probability=1),  # Horizontal
-#     # tio.RandomFlip(axes=1, flip_probability=1),  # vertical
-#     # tio.RandomFlip(axes=0, flip_probability=1),  # depth
-#     tio.RandomAffine(
-#         scales=0.2,
-#         degrees=15,
-#     default_pad_value=0,
-#     ),
-#     RandomCrop3D(crop_shape=(5, 256, 256)),
-# ])
-# image_tensor, mask_tensor = torch.from_numpy(image), torch.from_numpy(mask)
-# tras_image = transforms(image_tensor.unsqueeze(0))
-# tras_mask = transforms(mask_tensor.unsqueeze(0))
-# image_middle_index = tras_image.shape[1] // 2
-# print(f"tras_image shape: {tras_image.shape}, middle = {image_middle_index}")
-# ffig, axs = plt.subplots(2, 2, figsize=(15, 5))
-#
-# axs[0, 0].imshow(image[image_middle_index], cmap='gray')
-# axs[0, 0].set_title(f"original image middle  slice")
-# axs[0, 0].axis('off')  # Hide the axes
-#
-# axs[0, 1].imshow(image[image_middle_index + 5], cmap='gray')
-# axs[0, 1].set_title(f"original image middle + 5 slice")
-# axs[0, 1].axis('off')  # Hide the axes
-#
-# axs[1, 0].imshow(tras_image[0, -1-image_middle_index], cmap='gray')
-# axs[1, 0].set_title(f"h_v_d flip image middle slice")
-# axs[1, 0].axis('off')  # Hide the axes
-#
-# axs[1, 1].imshow(tras_image[0, image_middle_index-5], cmap='gray')
-# axs[1, 1].set_title(f"h_v_d flip image middle - 5 slice")
-# axs[1, 1].axis('off')  # Hide the axes
-#
-# # Adjust spacing between plots
-# plt.tight_layout()
-# plt.show()
+import wandb
+import os
+import plotly.graph_objects as go
+import plotly.express as px
+import numpy as np
 
-# ffig, axs = plt.subplots(1, 2, figsize=(15, 5))
+DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
+WANDB_TRACKING = True
+
+# def plot_voxels_type1(voxels):
+#     """
+#     Plot 3D voxels where each voxel has three specific values (0: background, 1: edge, 2: interior).
+#     """
+#     # Create a figure to hold the scatter plot
+#     fig = go.Figure()
 #
-# axs[0].imshow(image[image_middle_index], cmap='gray')
-# axs[0].set_title(f"original image middle  slice")
-# axs[0].axis('off')  # Hide the axes
+#     # Get the coordinates of the non-background voxels
+#     coords = torch.nonzero(voxels > 0, as_tuple=False)
+#     values = voxels[coords[:, 0], coords[:, 1], coords[:, 2]]
 #
-# axs[1].imshow(tras_image[0, image_middle_index], cmap='gray')
-# axs[1].set_title(f"Affine image middle slice")
-# axs[1].axis('off')  # Hide the axes
+#     # Get the values of the non-background voxels
+#     colors = ['#000000', '#00FF00', '#FFFFFF']  # black for background, green for edge, white for interior
 #
-# # Adjust spacing between plots
-# plt.tight_layout()
-# plt.show()
+#     values = values.cpu().tolist()  # Convert tensor to numpy array
+#     color_map = [colors[val] for val in values]
+#
+#     # Create scatter plot
+#     fig.add_trace(go.Scatter3d(
+#         x=coords[:, 0].tolist(),
+#         y=coords[:, 1].tolist(),
+#         z=coords[:, 2].tolist(),
+#         mode='markers',
+#         marker=dict(size=2, color=color_map)
+#     ))
+#
+#     # Show the plot
+#     fig.show()
+#
+# def plot_voxels_type2(voxels):
+#     """
+#     Plot 3D voxels where each non-background voxel can have a different color.
+#     """
+#     # Create a figure to hold the scatter plot
+#     fig = go.Figure()
+#
+#     # Get the coordinates of the non-background voxels
+#     coords = torch.nonzero(voxels > 0, as_tuple=False)
+#
+#     # Get the values of the non-background voxels
+#     values = voxels[coords[:, 0], coords[:, 1], coords[:, 2]]
+#
+#     # Normalize the values for color mapping
+#     norm_values = (values - values.min()) / (values.max() - values.min())
+#
+#     # Create scatter plot
+#     fig.add_trace(go.Scatter3d(
+#         x=coords[:, 0].tolist(),
+#         y=coords[:, 1].tolist(),
+#         z=coords[:, 2].tolist(),
+#         mode='markers',
+#         marker=dict(size=2, color=norm_values.tolist(), colorscale='Viridis')
+#     ))
+#
+#     # Show the plot
+#     fig.show()
+#
+#
+def detect_edges(mask, threshold=0.25):
+    # Compute the gradients along rows and columns
+    gradient_x = torch.gradient(mask, dim=2)[0]
+    gradient_y = torch.gradient(mask, dim=1)[0]
+    gradient_z = torch.gradient(mask, dim=0)[0]
+
+    gradient_magnitude = torch.sqrt(gradient_x ** 2 + gradient_y ** 2 + gradient_z ** 2)
+    masked_gradient_magnitude = gradient_magnitude * mask
+    edge_mask = (masked_gradient_magnitude > threshold).to(torch.int)
+
+    return edge_mask
 
 
-# ffig, axs = plt.subplots(2, 5, figsize=(15, 5))
-# for i in range(5):
-#     axs[0, i].imshow(tras_image[0, image_middle_index-2+i], cmap='gray')
-#     axs[0, i].set_title(f"{i-2}")
-#     axs[0, i].axis('off')  # Hide the axes
-#     axs[1, i].imshow(tras_mask[0, image_middle_index - 2 + i], cmap='gray')
-#     axs[1, i].set_title(f"{i - 2}")
-#     axs[1, i].axis('off')  # Hide the axes
+def split_mask(mask):
+    # mask: torch.Size([batch, D, H, W])
+    three_classes_mask = torch.zeros_like(mask, dtype=torch.int32)
+    for batch_idx in range(mask.size()[0]):
+        unique_elements = torch.unique(mask[batch_idx].flatten())
+        for element in unique_elements:
+            if element != 0:
+                element_mask = (mask[batch_idx] == element).to(torch.int)
+                edges = detect_edges(element_mask)
+                element_mask -= edges
+                three_classes_mask[batch_idx][edges == 1] = 1         # edge
+                three_classes_mask[batch_idx][element_mask == 1] = 2  # interior
+
+    return three_classes_mask
+
+
+
+
+
+def visualize_3d_image_2(tensor, save_path, wand_log=False):
+    # Ensure tensor is on the CPU and convert to numpy array
+    if tensor.is_cuda:
+        tensor = tensor.cpu()
+    data = tensor.numpy()
+
+    # Create a figure to hold all scatter plots
+    fig = go.Figure()
+
+    # Get the dimensions of the input tensor
+    print(data.shape)
+    depth, height, width = data.shape[-3:]
+    # Iterate through the tensor to add scatter points based on the two types of images
+    for z in range(depth):
+        for y in range(height):
+            for x in range(width):
+                value = data[0, z, y, x]
+                if value > 0:  # Only plot non-background voxels
+                    if value == 1:
+                        # Edge voxel (green color)
+                        color = 'green'
+                    elif value == 2:
+                        # Interior voxel (white color)
+                        color = 'white'
+                    else:
+                        # For the second type, use the voxel value for color
+                        color = f'rgb({int(value % 256)}, {int(value * 2 % 256)}, {int(value * 3 % 256)})'
+
+                    print(f"point cords:{[y,x,z]}, color:{color}")
+                    fig.add_trace(go.Scatter3d(
+                        x=[x],
+                        y=[y],
+                        z=[z],
+                        mode='markers',
+                        marker=dict(size=2, color=color),
+                        name=f'Voxel ({x},{y},{z})'
+                    ))
+
+    # Save the plot
+    fig.write_html(save_path, auto_play=False)
+
+    if wand_log:
+        # Create a table
+        table = wandb.Table(columns=["plotly_figure"])
+
+        # Add Plotly figure as HTML file into Table
+        table.add_data(wandb.Html(save_path))
+
+        # Log Table
+        wandb.log({save_path: table})
+
+
+
+
+
+def visualize_3d_image(input_tensor, save_path):
+    input_tensor = input_tensor.long()
+    depth, height, width = input_tensor.shape
+    print(f"input_tensor.shape: {input_tensor.shape}")
+    # # Create a color map tensor based on input values
+    # color_map = torch.tensor([
+    #     [0, 0, 0],  # Black for value 0
+    #     [0, 255, 0],  # Green for value 1
+    #     [255, 255, 255]  # White for value 2
+    # ], dtype=torch.float, device=input_tensor.device)  # Use input_tensor's device
+    #
+    # # Index the color_map tensor with input_tensor to assign colors
+    # output_tensor = color_map[input_tensor]
+    # print(f"output_tensor.shape: {output_tensor.shape}")
+    # output_tensor = output_tensor.squeeze(0)  # .permute(3, 0, 1, 2)
+    # output_array = output_tensor.cpu().numpy().astype(np.uint8)
+    print("before fig")
+    # Create the grid of coordinates
+    x, y, z = np.meshgrid(
+        np.arange(width),
+        np.arange(height),
+        np.arange(depth)
+    )
+
+    # Flatten the coordinate arrays
+    x_flat = x.flatten()
+    y_flat = y.flatten()
+    z_flat = z.flatten()
+    values_flat = input_tensor.cpu().numpy().flatten()
+    print("before fig")
+    fig = go.Figure(data=go.Volume(
+        x=x_flat,
+        y=y_flat,
+        z=z_flat,
+        value=values_flat,
+        isomin=0,
+        isomax=2,
+        opacity=0.1,  # Needs to be small to see through all surfaces
+        surface_count=3,  # Number of isosurfaces
+        colorscale=[[0, 'black'], [0.5, 'green'], [1, 'white']]  # Custom colorscale for black, green, and white
+    ))
+    print("after fig")
+
+    fig.update_layout(scene=dict(
+        xaxis_title='Width',
+        yaxis_title='Height',
+        zaxis_title='Depth'
+    ))
+    print("after fig.update_layout")
+    if WANDB_TRACKING:
+        # Create a table
+        # table = wandb.Table(columns=["plotly_figure"])
+        # table.add_data(wandb.Html(save_path))
+
+        # Log Table
+        wandb.log({save_path: fig})
+
+if WANDB_TRACKING:
+    wandb.login(key="12b9b358323faf2af56dc288334e6247c1e8bc63")
+    wandb.init(project="seg_unet_3D")
+# Save path for the plot
+save_path1 = '3d_image1.html'
+save_path2 = '3d_image2.html'
+
+# Visualize and save the 3D image
+
+
+mask_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG/man_seg070.tif"
+voxels_type2 = torch.from_numpy(tiff.imread(mask_path).astype(np.float32)).to(DEVICE)
+voxels_type1 = split_mask(voxels_type2.unsqueeze(0)).to(DEVICE)  # 0/1/2
+print("going to visualize_3d_image")
+visualize_3d_image(voxels_type1.squeeze(0), save_path1)
+# visualize_3d_image(voxels_type1, save_path2, wand_log=True)
+
+wandb.finish()
+# plot_voxels_type1(voxels_type1)
+
+# plot_voxels_type1(voxels_type2)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #
-# # Adjust spacing between plots
-# ffig.suptitle("all aug", fontsize=16)
-# plt.tight_layout()
-# plt.show()
-
-
-DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
-print(DEVICE)
+# import plotly.graph_objects as go
+# import numpy as np
+#
+# def plot_voxels_type1(voxels):
+#     # Create a figure to hold the scatter plot
+#     fig1 = go.Figure()
+#
+#     # Get the coordinates of the non-background voxels
+#     x, y, z = np.where(voxels > 0)
+#
+#     # Get the values of the non-background voxels
+#     values = voxels[x, y, z]
+#
+#     # Map values to colors
+#     colors = ['#000000', '#00FF00', '#FFFFFF']  # black for background, green for edge, white for interior
+#     color_map = [colors[val] for val in values]
+#
+#     # Create scatter plot
+#     fig1.add_trace(go.Scatter3d(
+#         x=x, y=y, z=z,
+#         mode='markers',
+#         marker=dict(size=2, color=color_map)
+#     ))
+#
+#     return fig1
+#
+# def plot_voxels_type2(voxels):
+#     # Create a figure to hold the scatter plot
+#     fig2 = go.Figure()
+#
+#     # Get the coordinates of the non-background voxels
+#     x, y, z = np.where(voxels > 0)
+#
+#     # Get the values of the non-background voxels
+#     values = voxels[x, y, z]
+#
+#     # Normalize the values for color mapping
+#     norm_values = (values - np.min(values)) / (np.max(values) - np.min(values))
+#
+#     # Create scatter plot
+#     fig2.add_trace(go.Scatter3d(
+#         x=x, y=y, z=z,
+#         mode='markers',
+#         marker=dict(size=2, color=norm_values, colorscale='Viridis')
+#     ))
+#
+#     return fig2
+#
+# def combine_figures_with_plane(fig1, fig2, save_path=None):
+#     # Extract data from both figures
+#     data1 = fig1.data
+#     data2 = fig2.data
+#
+#     # Create a new figure to combine the data
+#     combined_fig = go.Figure()
+#
+#     # Add data from the first figure
+#     for trace in data1:
+#         combined_fig.add_trace(trace)
+#
+#     # Add a red plane between the two plots
+#     red_plane = go.Surface(
+#         z=[[0, 0], [0, 0]],
+#         x=[0, 0, 0, 0],
+#         y=[[0, 64], [64, 64]],
+#         showscale=False,
+#         opacity=0.8,
+#         colorscale=[[0, 'red'], [1, 'red']]
+#     )
+#     combined_fig.add_trace(red_plane)
+#
+#     # Add data from the second figure, shifting the x-coordinates
+#     for trace in data2:
+#         shifted_trace = trace
+#         shifted_trace.update(x=[x+128 for x in shifted_trace.x])  # Shift x-coordinates to separate the plots
+#         combined_fig.add_trace(shifted_trace)
+#
+#     # Update layout
+#     combined_fig.update_layout(
+#         scene=dict(
+#             xaxis=dict(range=[-10, 150]),
+#             yaxis=dict(range=[-10, 70]),
+#             zaxis=dict(range=[-10, 70])
+#         )
+#     )
+#
+#     # Show the plot
+#     combined_fig.show()
+#
+#     # Save the plot if a path is provided
+#     if save_path:
+#         combined_fig.write_html(save_path, auto_open=True)
+#         print(f"Plot saved to {save_path}")
+#
+# # Example usage
+# voxels_type1 = np.random.randint(0, 3, size=(64, 64, 64))  # Replace with your voxel data
+# voxels_type2 = np.random.randint(0, 10, size=(64, 64, 64))  # Replace with your voxel data
+#
+# fig1 = plot_voxels_type1(voxels_type1)
+# fig2 = plot_voxels_type2(voxels_type2)
+#
+# save_path = "combined_voxel_plot.html"
+# combine_figures_with_plane(fig1, fig2, save_path)

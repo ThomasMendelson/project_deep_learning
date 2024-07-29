@@ -23,13 +23,22 @@ from utils import (
 # Hyperparameters
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-3
-L1_LAMBDA = 1e-5
+L1_LAMBDA = 0 # 1e-5
 DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
-BATCH_SIZE = 2
-NUM_EPOCHS = 120
-NUM_WORKERS = 2
+BATCH_SIZE = 8
+NUM_EPOCHS = 100
+NUM_WORKERS = 4
 CROP_SIZE = (32, 128, 128)
+# CROP_SIZE = (96, 96, 96)
 CLASS_WEIGHTS = [0.1, 0.7, 0.2]  # [0.1, 0.6, 0.3]   # [0.15, 0.6, 0.25]
+PATCH_SIZE = 16
+HIDDEN_SIZE = 512
+MLP_DIM = 2048
+NUM_LAYERS = 4
+NUM_HEADS = 8
+PROJ_TYPE = "conv"
+DROPOUT_RATE = 0.
+
 PIN_MEMORY = False
 LOAD_MODEL = False
 WANDB_TRACKING = True
@@ -114,9 +123,17 @@ def main():
                        "L2_lambda": WEIGHT_DECAY,
                        "CE_weight": CLASS_WEIGHTS,
                        "img_size": CROP_SIZE,
+                       "patch_size": PATCH_SIZE,
+                       "hidden_size": HIDDEN_SIZE,
+                       "mlp_dim": MLP_DIM,
+                       "num_layers": NUM_LAYERS,
+                       "num_heads": NUM_HEADS,
+                       "proj_type": PROJ_TYPE,
+                       "dropout_rate": DROPOUT_RATE,
                    })
-    model = ViT_UNet(in_channels=1, out_channels=3, img_size=(32, 128, 128), patch_size=16, hidden_size=512,
-                     mlp_dim=2048, num_layers=12, num_heads=8, proj_type="conv", dropout_rate=0.,
+    model = ViT_UNet(in_channels=1, out_channels=3, img_size=CROP_SIZE,
+                     patch_size=PATCH_SIZE, hidden_size=HIDDEN_SIZE, mlp_dim=MLP_DIM, num_layers=NUM_LAYERS,
+                     num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE,
                      classification=False, three_d=True, device=DEVICE).to(DEVICE)
 
 
@@ -218,7 +235,7 @@ def t_acc():
 
 
 if __name__ == "__main__":
-    # main()
-    t_acc()
+    main()
+    # t_acc()
     # t_acc_mul_models()
     # t_save_instance_by_colors()
