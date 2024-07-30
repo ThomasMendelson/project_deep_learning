@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 import wandb
 
 from tqdm import tqdm
@@ -29,13 +30,13 @@ from utils import (
 # Hyperparameters
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-3
-L1_LAMBDA = 1e-4
+L1_LAMBDA = 1e-5
 DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 8
 NUM_EPOCHS = 100
 NUM_WORKERS = 4
 CROP_SIZE = (32, 128, 128)
-CLASS_WEIGHTS = [0.1, 0.7, 0.2]  # [0.1, 0.6, 0.3]   # [0.15, 0.6, 0.25]
+CLASS_WEIGHTS = [0.1, 0.6, 0.3]  # [0.15, 0.6, 0.25]  # [0.1, 0.7, 0.2]
 PATCH_SIZE = 16
 HIDDEN_SIZE = 512
 MLP_DIM = 2048
@@ -152,7 +153,10 @@ def main():
     class_weights = torch.FloatTensor(CLASS_WEIGHTS).to(DEVICE)
     # criterion = nn.CrossEntropyLoss(weight=class_weights)
     criterion = DiceCELoss(to_onehot_y=False, softmax=True, squared_pred=True, weight=class_weights)  # in reference was , batch=True)
+
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-6, verbose=True)
 
     train_loader = get_loader(dir=TRAIN_IMG_DIR, maskdir=TRAIN_MASK_DIR, train_aug=True, shuffle=True,
                               batch_size=BATCH_SIZE, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
@@ -176,8 +180,10 @@ def main():
         train_loss = train_fn(train_loader, model, optimizer, criterion, scaler)
         val_loss = evaluate_fn(val_loader, model, criterion)
 
+        scheduler.step(val_loss)
+
         if WANDB_TRACKING:
-            wandb.log({"Train Loss": train_loss, "Val Loss": val_loss})
+            wandb.log({"Train Loss": train_loss, "Val Loss": val_loss, "Learning Rate": optimizer.param_groups[0]['lr']})
 
         if (epoch + 1) % 10 == 0:
             # save model
@@ -185,10 +191,10 @@ def main():
                 "state_dict": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
             }
-            save_checkpoint(checkpoint, filename="checkpoint/vit_checkpoint.pth.tar")
+            save_checkpoint(checkpoint, filename="checkpoint/vit_checkpoint2.pth.tar")
 
             # print some examples to a folder
-            save_predictions_as_imgs(loader=val_loader, model=model, folder="checkpoint/saved_images", device=DEVICE,
+            save_predictions_as_imgs(loader=val_loader, model=model, folder="checkpoint/saved_images2", device=DEVICE,
                                      three_d=THREE_D)
 
     # check accuracy
