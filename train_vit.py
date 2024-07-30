@@ -9,6 +9,12 @@ from model import UNET
 from dataset import Dataset
 from dataset3D import Dataset3D
 from transformer.models.vit import ViT_UNet
+from monai.losses import DiceCELoss
+import torch.nn.functional as F
+
+
+
+
 
 from utils import (
     load_checkpoint,
@@ -23,13 +29,12 @@ from utils import (
 # Hyperparameters
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-3
-L1_LAMBDA = 0 # 1e-5
-DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
+L1_LAMBDA = 1e-4
+DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 8
 NUM_EPOCHS = 100
 NUM_WORKERS = 4
 CROP_SIZE = (32, 128, 128)
-# CROP_SIZE = (96, 96, 96)
 CLASS_WEIGHTS = [0.1, 0.7, 0.2]  # [0.1, 0.6, 0.3]   # [0.15, 0.6, 0.25]
 PATCH_SIZE = 16
 HIDDEN_SIZE = 512
@@ -70,10 +75,13 @@ def train_fn(loader, model, optimizer, loss_fn, scaler):
         data = data.to(device=DEVICE)
         targets = Dataset3D.split_mask(targets.to(device=DEVICE)).long()
 
+        if isinstance(loss_fn, DiceCELoss):
+            targets_one_hot = F.one_hot(targets, num_classes=3).permute(0, 4, 1, 2, 3).float()
+
         # forward
         with torch.cuda.amp.autocast():
             predictions = model(data)
-            loss = loss_fn(predictions, targets)
+            loss = loss_fn(predictions, targets_one_hot)
             # Add L1 regularization
             loss += calculate_l1_loss(model)
 
@@ -101,8 +109,11 @@ def evaluate_fn(loader, model, loss_fn):
             data = data.to(device=DEVICE)
             targets = Dataset3D.split_mask(targets.to(device=DEVICE)).long()
 
+            if isinstance(loss_fn, DiceCELoss):
+                targets_one_hot = F.one_hot(targets, num_classes=3).permute(0, 4, 1, 2, 3).float()
+
             predictions = model(data)
-            loss = loss_fn(predictions, targets)
+            loss = loss_fn(predictions, targets_one_hot)
             # Add L1 regularization
             loss += calculate_l1_loss(model)
 
@@ -138,7 +149,8 @@ def main():
 
 
     class_weights = torch.FloatTensor(CLASS_WEIGHTS).to(DEVICE)
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    # criterion = nn.CrossEntropyLoss(weight=class_weights)
+    criterion = DiceCELoss(to_onehot_y=False, softmax=True, squared_pred=True, weight=class_weights)  # in reference was , batch=True)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     train_loader = get_loader(dir=TRAIN_IMG_DIR, maskdir=TRAIN_MASK_DIR, train_aug=True, shuffle=True,

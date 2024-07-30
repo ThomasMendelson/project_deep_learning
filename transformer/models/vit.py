@@ -33,16 +33,6 @@ class DconvBlock(nn.Module):
         return res
 
 
-# class ViTWithHiddenStates(ViT):
-#     def __init__(self, *args, **kwargs):
-#         super(ViTWithHiddenStates, self).__init__(*args, **kwargs)
-#
-#     def forward(self, x):
-#         hidden_states_out = []
-#         for blk in self.blocks:
-#             x = blk(x)
-#             hidden_states_out.append(x)
-#         return x, hidden_states_out
 
 
 class UpBlock(nn.Module):

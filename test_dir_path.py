@@ -1,15 +1,14 @@
 import cv2
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import tifffile as tiff
 import torch
 import wandb
-import os
 import plotly.graph_objects as go
-import plotly.express as px
 import numpy as np
 
-DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
 WANDB_TRACKING = True
 
 # def plot_voxels_type1(voxels):
@@ -82,7 +81,6 @@ def detect_edges(mask, threshold=0.25):
 
     return edge_mask
 
-
 def split_mask(mask):
     # mask: torch.Size([batch, D, H, W])
     three_classes_mask = torch.zeros_like(mask, dtype=torch.int32)
@@ -98,145 +96,107 @@ def split_mask(mask):
 
     return three_classes_mask
 
-
-
-
-
-def visualize_3d_image_2(tensor, save_path, wand_log=False):
-    # Ensure tensor is on the CPU and convert to numpy array
-    if tensor.is_cuda:
-        tensor = tensor.cpu()
-    data = tensor.numpy()
-
-    # Create a figure to hold all scatter plots
-    fig = go.Figure()
-
-    # Get the dimensions of the input tensor
-    print(data.shape)
-    depth, height, width = data.shape[-3:]
-    # Iterate through the tensor to add scatter points based on the two types of images
-    for z in range(depth):
-        for y in range(height):
-            for x in range(width):
-                value = data[0, z, y, x]
-                if value > 0:  # Only plot non-background voxels
-                    if value == 1:
-                        # Edge voxel (green color)
-                        color = 'green'
-                    elif value == 2:
-                        # Interior voxel (white color)
-                        color = 'white'
-                    else:
-                        # For the second type, use the voxel value for color
-                        color = f'rgb({int(value % 256)}, {int(value * 2 % 256)}, {int(value * 3 % 256)})'
-
-                    print(f"point cords:{[y,x,z]}, color:{color}")
-                    fig.add_trace(go.Scatter3d(
-                        x=[x],
-                        y=[y],
-                        z=[z],
-                        mode='markers',
-                        marker=dict(size=2, color=color),
-                        name=f'Voxel ({x},{y},{z})'
-                    ))
-
-    # Save the plot
-    fig.write_html(save_path, auto_play=False)
-
-    if wand_log:
-        # Create a table
-        table = wandb.Table(columns=["plotly_figure"])
-
-        # Add Plotly figure as HTML file into Table
-        table.add_data(wandb.Html(save_path))
-
-        # Log Table
-        wandb.log({save_path: table})
-
-
-
-
-
 def visualize_3d_image(input_tensor, save_path):
-    input_tensor = input_tensor.long()
-    depth, height, width = input_tensor.shape
-    print(f"input_tensor.shape: {input_tensor.shape}")
-    # # Create a color map tensor based on input values
-    # color_map = torch.tensor([
-    #     [0, 0, 0],  # Black for value 0
-    #     [0, 255, 0],  # Green for value 1
-    #     [255, 255, 255]  # White for value 2
-    # ], dtype=torch.float, device=input_tensor.device)  # Use input_tensor's device
-    #
-    # # Index the color_map tensor with input_tensor to assign colors
-    # output_tensor = color_map[input_tensor]
-    # print(f"output_tensor.shape: {output_tensor.shape}")
-    # output_tensor = output_tensor.squeeze(0)  # .permute(3, 0, 1, 2)
-    # output_array = output_tensor.cpu().numpy().astype(np.uint8)
-    print("before fig")
-    # Create the grid of coordinates
-    x, y, z = np.meshgrid(
-        np.arange(width),
-        np.arange(height),
-        np.arange(depth)
-    )
+    image_np = input_tensor.cpu().numpy()
 
-    # Flatten the coordinate arrays
-    x_flat = x.flatten()
-    y_flat = y.flatten()
-    z_flat = z.flatten()
-    values_flat = input_tensor.cpu().numpy().flatten()
-    print("before fig")
-    fig = go.Figure(data=go.Volume(
-        x=x_flat,
-        y=y_flat,
-        z=z_flat,
-        value=values_flat,
-        isomin=0,
-        isomax=2,
-        opacity=0.1,  # Needs to be small to see through all surfaces
-        surface_count=3,  # Number of isosurfaces
-        colorscale=[[0, 'black'], [0.5, 'green'], [1, 'white']]  # Custom colorscale for black, green, and white
-    ))
-    print("after fig")
+    x, y, z = np.indices(image_np.shape)
+    x, y, z = x[image_np > 0], y[image_np > 0], z[image_np > 0]  # Get indices where the voxel value is not zero
+    values = image_np[image_np > 0]  # Get voxel values that are not zero
 
+    colors = np.where(values == 1, 'green', 'red')
+
+    # Create 3D scatter plot
+    fig = go.Figure(data=[
+        go.Scatter3d(
+            x=x.flatten(),
+            y=y.flatten(),
+            z=z.flatten(),
+            mode='markers',
+            marker=dict(
+                size=5,
+                color=colors,  # Color by voxel value
+                opacity=0.2
+            )
+        )
+    ])
+
+    # Update layout for better visualization
     fig.update_layout(scene=dict(
-        xaxis_title='Width',
-        yaxis_title='Height',
-        zaxis_title='Depth'
+        xaxis=dict(nticks=4, range=[0, image_np.shape[0]]),
+        yaxis=dict(nticks=4, range=[0, image_np.shape[1]]),
+        zaxis=dict(nticks=4, range=[0, image_np.shape[2]]),
+        aspectratio=dict(x=1, y=1, z=1)
     ))
-    print("after fig.update_layout")
-    if WANDB_TRACKING:
-        # Create a table
-        # table = wandb.Table(columns=["plotly_figure"])
-        # table.add_data(wandb.Html(save_path))
+    # Save the figure to a temporary file
+    fig.write_html(save_path)
 
-        # Log Table
-        wandb.log({save_path: fig})
+    table = wandb.Table(columns=["plotly_figure"])
+    table.add_data(wandb.Html(save_path))
+    # Log the image to wandb
+    wandb.log({os.path.basename(save_path): table})
+    # wandb.log({"3D Plot": wandb.Image(html_file)})
 
-if WANDB_TRACKING:
-    wandb.login(key="12b9b358323faf2af56dc288334e6247c1e8bc63")
-    wandb.init(project="seg_unet_3D")
-# Save path for the plot
-save_path1 = '3d_image1.html'
-save_path2 = '3d_image2.html'
+def random_crop(image, crop_size=(32,128,128) , num_crops=10, threshold=500):
+    depth, height, width = image.shape[-3:]
+    crop_depth, crop_height, crop_width = crop_size
 
-# Visualize and save the 3D image
+    if crop_depth > depth or crop_height > height or crop_width > width:
+        raise ValueError("Crop shape is larger than the image dimensions")
 
+    while True:
+        # Random starting points
+        start_d = torch.randint(0, depth - crop_depth + 1, (1,)).item()
+        start_h = torch.randint(0, height - crop_height + 1, (1,)).item()
+        start_w = torch.randint(0, width - crop_width + 1, (1,)).item()
+        # Crop the image
+        cropped_image = image[:, start_d:start_d + crop_depth, start_h:start_h + crop_height,
+                        start_w:start_w + crop_width]
+        if torch.sum(cropped_image > 0) > threshold * crop_depth:
+            # print(f"depth: {depth}, height: {height}, width: {width}")
+            # print(f"crop_depth: {crop_depth}, crop_height: {crop_height}, crop_width: {crop_width}")
+            # print(f"start_d: {start_d}, start_h: {start_h}, start_w: {start_w}")
+            break
 
-mask_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG/man_seg070.tif"
-voxels_type2 = torch.from_numpy(tiff.imread(mask_path).astype(np.float32)).to(DEVICE)
-voxels_type1 = split_mask(voxels_type2.unsqueeze(0)).to(DEVICE)  # 0/1/2
-print("going to visualize_3d_image")
-visualize_3d_image(voxels_type1.squeeze(0), save_path1)
-# visualize_3d_image(voxels_type1, save_path2, wand_log=True)
+    return cropped_image
 
-wandb.finish()
-# plot_voxels_type1(voxels_type1)
+# if WANDB_TRACKING:
+#     wandb.login(key="12b9b358323faf2af56dc288334e6247c1e8bc63")
+#     wandb.init(project="seg_unet_3D")
+# # Save path for the plot
+# save_path1 = '3d_image1.html'
+# save_path2 = '3d_image2.html'
+#
+# # Visualize and save the 3D image
+#
+#
+# mask_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG/man_seg070.tif"
+# voxels_type2 = torch.from_numpy(tiff.imread(mask_path).astype(np.float32)).to(DEVICE)  # every cell have different value
+# voxels_type1 = split_mask(voxels_type2.unsqueeze(0)).to(DEVICE)  # 0/1/2
+# print("going to visualize_3d_image")
+# visualize_3d_image(random_crop(voxels_type1)[0], save_path1)
+#
+#
+# wandb.finish()
+import torch.nn as nn
+from monai.losses import DiceCELoss
+CLASS_WEIGHTS = [0.1, 0.7, 0.2]
+class_weights = torch.FloatTensor(CLASS_WEIGHTS).to(DEVICE)
 
-# plot_voxels_type1(voxels_type2)
+criterion = nn.CrossEntropyLoss(weight=class_weights)
 
+if isinstance(criterion, DiceCELoss):
+    print("in then")
+else:
+    print("in else")
+print(criterion)
 
+criterion = DiceCELoss(to_onehot_y=False, softmax=True, squared_pred=True, weight=class_weights)
+
+if isinstance(criterion, DiceCELoss):
+    print("in then")
+else:
+    print("in else")
+print(criterion)
 
 
 
