@@ -98,6 +98,7 @@ def split_mask(mask):
 
 def visualize_3d_image_from_classes(input_tensor, save_path):
     image_np = input_tensor.cpu().numpy()
+    print(f"image_np.shape: {image_np.shape}")
 
     x, y, z = np.indices(image_np.shape)
     x, y, z = x[image_np > 0], y[image_np > 0], z[image_np > 0]  # Get indices where the voxel value is not zero

@@ -36,7 +36,7 @@ BATCH_SIZE = 8
 NUM_EPOCHS = 100
 NUM_WORKERS = 4
 CROP_SIZE = (32, 128, 128)
-CLASS_WEIGHTS = [0.1, 0.6, 0.3]  # [0.15, 0.6, 0.25]  # [0.1, 0.7, 0.2]
+CLASS_WEIGHTS = [0.15, 0.6, 0.25] #  [0.1, 0.6, 0.3]  # [0.1, 0.7, 0.2]
 PATCH_SIZE = 16
 HIDDEN_SIZE = 512
 MLP_DIM = 2048
@@ -191,17 +191,17 @@ def main():
                 "state_dict": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
             }
-            save_checkpoint(checkpoint, filename="checkpoint/vit_checkpoint2.pth.tar")
+            save_checkpoint(checkpoint, filename="checkpoint/vit_checkpoint.pth.tar")
 
             # print some examples to a folder
-            save_predictions_as_imgs(loader=val_loader, model=model, folder="checkpoint/saved_images2", device=DEVICE,
-                                     three_d=THREE_D)
+            save_predictions_as_imgs(loader=val_loader, model=model, folder="checkpoint/saved_images", device=DEVICE,
+                                     three_d=THREE_D, wandb_tracking=WANDB_TRACKING)
 
     # check accuracy
     check_accuracy(test_check_accuracy_loader, model, device=DEVICE, three_d=THREE_D)
 
     # save instance image
-    save_instance_by_colors(test_check_accuracy_loader, model, folder="checkpoint", device=DEVICE, wandb_tracking=WANDB_TRACKING)
+    save_instance_by_colors(test_check_accuracy_loader, model, folder="checkpoint", three_d=THREE_D, device=DEVICE, wandb_tracking=WANDB_TRACKING)
 
     if WANDB_TRACKING:
         # torch.onnx.export(model, torch.randn(1, 1, CROP_SIZE, CROP_SIZE, device=DEVICE), "model.onnx")
@@ -243,14 +243,40 @@ def t_acc():
 #
 #
 #
-# def t_save_instance_by_colors():
-#     model = UNET(in_channels=1, out_channels=3).to(DEVICE)
-#     load_checkpoint(torch.load("checkpoint/my_checkpoint.pth.tar", map_location=torch.device(DEVICE)), model)
-#
-#     loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=True,
-#                         batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-#                         pin_memory=PIN_MEMORY)
-#     save_instance_by_colors(loader, model, folder="checkpoint", device=DEVICE)
+def t_save_instance_by_colors():
+    if WANDB_TRACKING:
+        wandb.login(key="12b9b358323faf2af56dc288334e6247c1e8bc63")
+        wandb.init(project="seg_unet_3D",
+                   config={
+                       "epochs": NUM_EPOCHS,
+                       "batch_size": BATCH_SIZE,
+                       "lr": LEARNING_RATE,
+                       "L1_lambda": L1_LAMBDA,
+                       "L2_lambda": WEIGHT_DECAY,
+                       "CE_weight": CLASS_WEIGHTS,
+                       "img_size": CROP_SIZE,
+                   })
+
+    model = ViT_UNet(in_channels=1, out_channels=3, img_size=CROP_SIZE,
+                     patch_size=PATCH_SIZE, hidden_size=HIDDEN_SIZE, mlp_dim=MLP_DIM, num_layers=NUM_LAYERS,
+                     num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE,
+                     classification=False, three_d=THREE_D, device=DEVICE).to(DEVICE)
+
+    load_checkpoint(torch.load("checkpoint/vit_checkpoint2.pth.tar", map_location=torch.device(DEVICE)), model)
+
+    val_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=False,
+                            batch_size=BATCH_SIZE, crop_size=CROP_SIZE, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
+                            three_d=THREE_D, device=DEVICE)
+
+    test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=False,
+                                            batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
+                                            pin_memory=PIN_MEMORY, three_d=THREE_D, device=DEVICE)
+
+    save_predictions_as_imgs(loader=val_loader, model=model, folder="checkpoint/saved_images2", device=DEVICE,
+                             three_d=THREE_D, wandb_tracking=WANDB_TRACKING)
+
+
+    # save_instance_by_colors(test_check_accuracy_loader, model, folder="checkpoint", three_d=THREE_D, device=DEVICE, wandb_tracking=WANDB_TRACKING)
 
 
 if __name__ == "__main__":

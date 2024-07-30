@@ -215,22 +215,20 @@ def save_predictions_as_imgs(loader, model, folder, device="cuda", three_d=False
             preds = model(x)
             predicted_classes = predict_classes(preds)
 
-        colored_preds = apply_color_map(predicted_classes, three_d=three_d).type(torch.uint8)
-
-        colored_gt = apply_color_map(Dataset.split_mask(y).long(), three_d=three_d).type(torch.uint8)
-
-        for i in range(colored_preds.shape[0]):  # Loop through the batch
-            # Permute and move to CPU
+        for i in range(predicted_classes.shape[0]):  # Loop through the batch
             if three_d and idx == 0:
-                visualize_3d_image_from_classes(image=colored_preds[i], save_path=f"{folder}/pred_{idx}_{i}.html", wandb_tracking=wandb_tracking)
-                visualize_3d_image_from_classes(image=colored_gt[i], save_path=f"{folder}/gt_{idx}_{i}.html", wandb_tracking=wandb_tracking)
-
+                visualize_3d_image_from_classes(image=predicted_classes[i], save_path=f"{folder}/pred_{idx}_{i}.html", wandb_tracking=wandb_tracking)
+                visualize_3d_image_from_classes(image=y[i], save_path=f"{folder}/gt_{idx}_{i}.html", wandb_tracking=wandb_tracking)
                 # pred_img = colored_preds[i].permute(1, 2, 3, 0).cpu().numpy()
                 # gt_img = colored_gt[i].permute(1, 2, 3, 0).cpu().numpy()
                 # middle_slice = pred_img.shape[0]//2
                 # pred_img = pred_img[middle_slice]
                 # gt_img = gt_img[middle_slice]
+
             else:
+                colored_preds = apply_color_map(predicted_classes, three_d=three_d).type(torch.uint8)
+                colored_gt = apply_color_map(Dataset.split_mask(y).long(), three_d=three_d).type(torch.uint8)
+
                 pred_img = colored_preds[i].permute(1, 2, 0).cpu().numpy()
                 gt_img = colored_gt[i].permute(1, 2, 0).cpu().numpy()
                 separator_line = np.ones((pred_img.shape[0], 5, 3), dtype=np.uint8) * 255  # Red line
@@ -241,6 +239,9 @@ def save_predictions_as_imgs(loader, model, folder, device="cuda", three_d=False
 
                 # Save the concatenated image
                 concatenated_img_pil.save(f"{folder}/pred_gt_{idx}_{i}.png")
+
+        if three_d:
+            break
 
     model.train()
 
@@ -309,13 +310,11 @@ def save_instance_by_colors(loader, model, folder, device="cuda", three_d=False,
 
 
 def visualize_3d_image_instances(image, save_path, wandb_tracking=False):
-    # if on GPU
-    image_np = image.cpu().numpy()
 
     # Get indices and values where the voxel value is not zero
-    x, y, z = np.indices(image_np.shape)
-    x, y, z = x[image_np > 0], y[image_np > 0], z[image_np > 0]
-    values = image_np[image_np > 0]
+    x, y, z = np.indices(image.shape)
+    x, y, z = x[image > 0], y[image > 0], z[image > 0]
+    values = image[image > 0]
 
     # Get unique class labels
     unique_classes = np.unique(values)
@@ -346,9 +345,9 @@ def visualize_3d_image_instances(image, save_path, wandb_tracking=False):
 
     # Update layout for better visualization
     fig.update_layout(scene=dict(
-        xaxis=dict(nticks=4, range=[0, image_np.shape[0]]),
-        yaxis=dict(nticks=4, range=[0, image_np.shape[1]]),
-        zaxis=dict(nticks=4, range=[0, image_np.shape[2]]),
+        xaxis=dict(nticks=4, range=[0, image.shape[0]]),
+        yaxis=dict(nticks=4, range=[0, image.shape[1]]),
+        zaxis=dict(nticks=4, range=[0, image.shape[2]]),
         aspectratio=dict(x=1, y=1, z=1)
     ))
 
