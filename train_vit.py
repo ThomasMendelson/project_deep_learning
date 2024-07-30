@@ -44,6 +44,7 @@ NUM_HEADS = 8
 PROJ_TYPE = "conv"
 DROPOUT_RATE = 0.
 
+THREE_D = True
 PIN_MEMORY = False
 LOAD_MODEL = False
 WANDB_TRACKING = True
@@ -145,7 +146,7 @@ def main():
     model = ViT_UNet(in_channels=1, out_channels=3, img_size=CROP_SIZE,
                      patch_size=PATCH_SIZE, hidden_size=HIDDEN_SIZE, mlp_dim=MLP_DIM, num_layers=NUM_LAYERS,
                      num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE,
-                     classification=False, three_d=True, device=DEVICE).to(DEVICE)
+                     classification=False, three_d=THREE_D, device=DEVICE).to(DEVICE)
 
 
     class_weights = torch.FloatTensor(CLASS_WEIGHTS).to(DEVICE)
@@ -155,18 +156,18 @@ def main():
 
     train_loader = get_loader(dir=TRAIN_IMG_DIR, maskdir=TRAIN_MASK_DIR, train_aug=True, shuffle=True,
                               batch_size=BATCH_SIZE, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                              pin_memory=PIN_MEMORY, three_d=True, device=DEVICE)
+                              pin_memory=PIN_MEMORY, three_d=THREE_D, device=DEVICE)
     val_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=False,
                             batch_size=BATCH_SIZE, crop_size=CROP_SIZE, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
-                            three_d=True, device=DEVICE)
+                            three_d=THREE_D, device=DEVICE)
 
     test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=False,
                                             batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                                            pin_memory=PIN_MEMORY, three_d=True, device=DEVICE)
+                                            pin_memory=PIN_MEMORY, three_d=THREE_D, device=DEVICE)
 
     if LOAD_MODEL:
         load_checkpoint(torch.load("checkpoint/vit_checkpoint.pth.tar", map_location=torch.device(DEVICE)), model)
-        check_accuracy(val_loader, model, device=DEVICE, three_d=True)
+        check_accuracy(val_loader, model, device=DEVICE, three_d=THREE_D)
 
     scaler = torch.cuda.amp.GradScaler()
 
@@ -188,13 +189,13 @@ def main():
 
             # print some examples to a folder
             save_predictions_as_imgs(loader=val_loader, model=model, folder="checkpoint/saved_images", device=DEVICE,
-                                     three_d=True)
+                                     three_d=THREE_D)
 
     # check accuracy
-    check_accuracy(test_check_accuracy_loader, model, device=DEVICE, three_d=True)
+    check_accuracy(test_check_accuracy_loader, model, device=DEVICE, three_d=THREE_D)
 
     # save instance image
-    save_instance_by_colors(test_check_accuracy_loader, model, folder="checkpoint", device=DEVICE, three_d=True)
+    save_instance_by_colors(test_check_accuracy_loader, model, folder="checkpoint", device=DEVICE, wandb_tracking=WANDB_TRACKING)
 
     if WANDB_TRACKING:
         # torch.onnx.export(model, torch.randn(1, 1, CROP_SIZE, CROP_SIZE, device=DEVICE), "model.onnx")
@@ -206,13 +207,13 @@ def main():
 def t_acc():
     model = ViT_UNet(in_channels=1, out_channels=3, img_size=(32, 128, 128), patch_size=16, hidden_size=512,
                      mlp_dim=2048, num_layers=12, num_heads=8, proj_type="conv", dropout_rate=0.,
-                     classification=False, three_d=True, device=DEVICE).to(DEVICE)
+                     classification=False, three_d=THREE_D, device=DEVICE).to(DEVICE)
     load_checkpoint(torch.load("checkpoint/vit_checkpoint.pth.tar", map_location=torch.device(DEVICE)), model)
 
     test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=True,
                                             batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                                            pin_memory=PIN_MEMORY, three_d=True, device=DEVICE)
-    check_accuracy(test_check_accuracy_loader, model, device=DEVICE, one_image=False, three_d=True)
+                                            pin_memory=PIN_MEMORY, three_d=THREE_D, device=DEVICE)
+    check_accuracy(test_check_accuracy_loader, model, device=DEVICE, one_image=False, three_d=THREE_D)
 
 
 # def t_acc_mul_models():

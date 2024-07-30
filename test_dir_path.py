@@ -96,7 +96,7 @@ def split_mask(mask):
 
     return three_classes_mask
 
-def visualize_3d_image(input_tensor, save_path):
+def visualize_3d_image_from_classes(input_tensor, save_path):
     image_np = input_tensor.cpu().numpy()
 
     x, y, z = np.indices(image_np.shape)
@@ -129,13 +129,63 @@ def visualize_3d_image(input_tensor, save_path):
     ))
     # Save the figure to a temporary file
     fig.write_html(save_path)
+    if WANDB_TRACKING:
+        table = wandb.Table(columns=["plotly_figure"])
+        table.add_data(wandb.Html(save_path))
+        # Log the image to wandb
+        wandb.log({os.path.basename(save_path): table})
 
-    table = wandb.Table(columns=["plotly_figure"])
-    table.add_data(wandb.Html(save_path))
-    # Log the image to wandb
-    wandb.log({os.path.basename(save_path): table})
-    # wandb.log({"3D Plot": wandb.Image(html_file)})
+def visualize_3d_image_instances(input_tensor, save_path):
+    image_np = input_tensor.cpu().numpy()
 
+    # Get indices and values where the voxel value is not zero
+    x, y, z = np.indices(image_np.shape)
+    x, y, z = x[image_np > 0], y[image_np > 0], z[image_np > 0]
+    values = image_np[image_np > 0]
+
+    # Get unique class labels
+    unique_classes = np.unique(values)
+
+    # Generate a color for each unique class
+    class_colors = {
+        cls: f'rgb({int(cls*80) % 256}, {int(cls*50) % 256}, {int(cls*100) % 256})'
+        for cls in unique_classes
+    }
+
+    # Assign colors based on class labels
+    colors = np.array([class_colors[val] for val in values])
+
+    # Create 3D scatter plot
+    fig = go.Figure(data=[
+        go.Scatter3d(
+            x=x.flatten(),
+            y=y.flatten(),
+            z=z.flatten(),
+            mode='markers',
+            marker=dict(
+                size=5,
+                color=colors,  # Color by class value
+                opacity=0.2
+            )
+        )
+    ])
+
+    # Update layout for better visualization
+    fig.update_layout(scene=dict(
+        xaxis=dict(nticks=4, range=[0, image_np.shape[0]]),
+        yaxis=dict(nticks=4, range=[0, image_np.shape[1]]),
+        zaxis=dict(nticks=4, range=[0, image_np.shape[2]]),
+        aspectratio=dict(x=1, y=1, z=1)
+    ))
+
+    # Save the figure to a temporary file
+    fig.write_html(save_path)
+
+    # Optionally log to Weights & Biases
+    if 'WANDB_TRACKING' in globals() and WANDB_TRACKING:
+        table = wandb.Table(columns=["plotly_figure"])
+        table.add_data(wandb.Html(save_path))
+        wandb.log({os.path.basename(save_path): table})
 def random_crop(image, crop_size=(32,128,128) , num_crops=10, threshold=500):
     depth, height, width = image.shape[-3:]
     crop_depth, crop_height, crop_width = crop_size
@@ -159,44 +209,28 @@ def random_crop(image, crop_size=(32,128,128) , num_crops=10, threshold=500):
 
     return cropped_image
 
-# if WANDB_TRACKING:
-#     wandb.login(key="12b9b358323faf2af56dc288334e6247c1e8bc63")
-#     wandb.init(project="seg_unet_3D")
-# # Save path for the plot
-# save_path1 = '3d_image1.html'
-# save_path2 = '3d_image2.html'
-#
-# # Visualize and save the 3D image
-#
-#
-# mask_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG/man_seg070.tif"
-# voxels_type2 = torch.from_numpy(tiff.imread(mask_path).astype(np.float32)).to(DEVICE)  # every cell have different value
-# voxels_type1 = split_mask(voxels_type2.unsqueeze(0)).to(DEVICE)  # 0/1/2
-# print("going to visualize_3d_image")
-# visualize_3d_image(random_crop(voxels_type1)[0], save_path1)
-#
-#
-# wandb.finish()
-import torch.nn as nn
-from monai.losses import DiceCELoss
-CLASS_WEIGHTS = [0.1, 0.7, 0.2]
-class_weights = torch.FloatTensor(CLASS_WEIGHTS).to(DEVICE)
+if WANDB_TRACKING:
+    wandb.login(key="12b9b358323faf2af56dc288334e6247c1e8bc63")
+    wandb.init(project="seg_unet_3D")
+# Save path for the plot
+save_path1 = '3d_image1.html'
+save_path2 = '3d_image2.html'
 
-criterion = nn.CrossEntropyLoss(weight=class_weights)
+# Visualize and save the 3D image
 
-if isinstance(criterion, DiceCELoss):
-    print("in then")
-else:
-    print("in else")
-print(criterion)
 
-criterion = DiceCELoss(to_onehot_y=False, softmax=True, squared_pred=True, weight=class_weights)
+mask_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG/man_seg070.tif"
+voxels_type2 = torch.from_numpy(tiff.imread(mask_path).astype(np.float32)).to(DEVICE).unsqueeze(0)  # every cell have different value
+voxels_type2 = random_crop(voxels_type2)
+voxels_type1 = split_mask(voxels_type2).to(DEVICE)  # 0/1/2
+print("going to visualize_3d_image")
+visualize_3d_image_from_classes(voxels_type1[0], save_path1)
 
-if isinstance(criterion, DiceCELoss):
-    print("in then")
-else:
-    print("in else")
-print(criterion)
+visualize_3d_image_instances(voxels_type2[0], save_path2)
+
+if WANDB_TRACKING:
+    wandb.finish()
+
 
 
 

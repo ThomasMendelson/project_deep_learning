@@ -1,6 +1,6 @@
 import os
-
 import torch
+import wandb
 import torchvision
 from PIL import Image
 import numpy as np
@@ -13,6 +13,7 @@ from tqdm import tqdm
 from dataset import Dataset
 from dataset3D import Dataset3D
 from torch.utils.data import DataLoader
+import plotly.graph_objects as go
 
 
 def save_checkpoint(state, filename="my_checkpoint.pth.tar"):
@@ -204,31 +205,7 @@ def get_instance_color(image):
     return colored_image
 
 
-
-def save_instance_by_colors(loader, model, folder, device="cuda", three_d=False):
-    print("=> saving instance images")
-    model.eval()
-    for idx, (x, y) in enumerate(loader):
-        x = x.to(device=device, dtype=torch.float32)
-        with torch.no_grad():
-            preds = model(x)
-            predicted_classes = predict_classes(preds).cpu().numpy()
-        labeled_preds =get_cell_instances(predicted_classes[0], three_d=three_d)
-        gt = y[0].cpu().numpy().astype(np.uint8)
-        if three_d:
-            middle_slice = labeled_preds.shape[1] // 2
-            colored_instance_preds = Image.fromarray(get_instance_color(labeled_preds[:, middle_slice]))
-            colored_instance_gt = Image.fromarray(get_instance_color(gt[:, middle_slice]))
-
-        else:
-            colored_instance_preds = Image.fromarray(get_instance_color(labeled_preds))
-            colored_instance_gt = Image.fromarray(get_instance_color(gt))
-
-        colored_instance_preds.save(f"{folder}/pred_instances.png")
-        colored_instance_gt.save(f"{folder}/gt_instances.png")
-        break
-
-def save_predictions_as_imgs(loader, model, folder, device="cuda", three_d=False):
+def save_predictions_as_imgs(loader, model, folder, device="cuda", three_d=False, wandb_tracking=False):
     print("=> saving images")
     model.eval()
     for idx, (x, y) in enumerate(loader):
@@ -244,56 +221,176 @@ def save_predictions_as_imgs(loader, model, folder, device="cuda", three_d=False
 
         for i in range(colored_preds.shape[0]):  # Loop through the batch
             # Permute and move to CPU
-            if three_d:
-                pred_img = colored_preds[i].permute(1, 2, 3, 0).cpu().numpy()
-                gt_img = colored_gt[i].permute(1, 2, 3, 0).cpu().numpy()
-                middle_slice = pred_img.shape[0]//2
-                pred_img = pred_img[middle_slice]
-                gt_img = gt_img[middle_slice]
+            if three_d and idx == 0:
+                visualize_3d_image_from_classes(image=colored_preds[i], save_path=f"{folder}/pred_{idx}_{i}.html", wandb_tracking=wandb_tracking)
+                visualize_3d_image_from_classes(image=colored_gt[i], save_path=f"{folder}/gt_{idx}_{i}.html", wandb_tracking=wandb_tracking)
+
+                # pred_img = colored_preds[i].permute(1, 2, 3, 0).cpu().numpy()
+                # gt_img = colored_gt[i].permute(1, 2, 3, 0).cpu().numpy()
+                # middle_slice = pred_img.shape[0]//2
+                # pred_img = pred_img[middle_slice]
+                # gt_img = gt_img[middle_slice]
             else:
                 pred_img = colored_preds[i].permute(1, 2, 0).cpu().numpy()
                 gt_img = colored_gt[i].permute(1, 2, 0).cpu().numpy()
-            separator_line = np.ones((pred_img.shape[0], 5, 3), dtype=np.uint8) * 255  # Red line
-            concatenated_img = np.concatenate([pred_img, separator_line, gt_img], axis=1)
+                separator_line = np.ones((pred_img.shape[0], 5, 3), dtype=np.uint8) * 255  # Red line
+                concatenated_img = np.concatenate([pred_img, separator_line, gt_img], axis=1)
 
-            # Convert to PIL Image
-            concatenated_img_pil = Image.fromarray(concatenated_img)
+                # Convert to PIL Image
+                concatenated_img_pil = Image.fromarray(concatenated_img)
 
-            # Save the concatenated image
-            concatenated_img_pil.save(f"{folder}/pred_gt_{idx}_{i}.png")
+                # Save the concatenated image
+                concatenated_img_pil.save(f"{folder}/pred_gt_{idx}_{i}.png")
 
     model.train()
 
+def visualize_3d_image_from_classes(image, save_path, wandb_tracking=False):
+    # if on GPU
+    image_np = image.cpu().numpy()
 
-def save_test_predictions_as_imgs(
-        loader, model, folder=r"C:\BGU\seg_unet\Fluo-N2DH-SIM+_training-datasets\saved", device="cuda", type="train"
-):
+    x, y, z = np.indices(image_np.shape)
+    x, y, z = x[image_np > 0], y[image_np > 0], z[image_np > 0]  # Get indices where the voxel value is not zero
+    values = image_np[image_np > 0]  # Get voxel values that are not zero
+
+    colors = np.where(values == 1, 'green', 'red')
+
+    # Create 3D scatter plot
+    fig = go.Figure(data=[
+        go.Scatter3d(
+            x=x.flatten(),
+            y=y.flatten(),
+            z=z.flatten(),
+            mode='markers',
+            marker=dict(
+                size=5,
+                color=colors,  # Color by voxel value
+                opacity=0.2
+            )
+        )
+    ])
+
+    # Update layout for better visualization
+    fig.update_layout(scene=dict(
+        xaxis=dict(nticks=4, range=[0, image_np.shape[0]]),
+        yaxis=dict(nticks=4, range=[0, image_np.shape[1]]),
+        zaxis=dict(nticks=4, range=[0, image_np.shape[2]]),
+        aspectratio=dict(x=1, y=1, z=1)
+    ))
+    # Save the figure to a temporary file
+    fig.write_html(save_path)
+    if wandb_tracking:
+        table = wandb.Table(columns=["plotly_figure"])
+        table.add_data(wandb.Html(save_path))
+        # Log the image to wandb
+        wandb.log({os.path.basename(save_path): table})
+
+
+def save_instance_by_colors(loader, model, folder, device="cuda", three_d=False, wandb_tracking=False):
+    print("=> saving instance images")
     model.eval()
-    if type == "train":
+    for idx, (x, y) in enumerate(loader):
+        x = x.to(device=device, dtype=torch.float32)
+        with torch.no_grad():
+            preds = model(x)
+            predicted_classes = predict_classes(preds).cpu().numpy()
+        labeled_preds =get_cell_instances(predicted_classes[0], three_d=three_d)
+        gt = y[0].cpu().numpy().astype(np.uint8)
+        if three_d:
+            visualize_3d_image_instances(image=labeled_preds, save_path=f"{folder}/pred_instances.html", wandb_tracking=wandb_tracking)
+            visualize_3d_image_instances(image=gt, save_path=f"{folder}/gt_instances.html", wandb_tracking=wandb_tracking)
+        else:
+            colored_instance_preds = Image.fromarray(get_instance_color(labeled_preds))
+            colored_instance_gt = Image.fromarray(get_instance_color(gt))
+            colored_instance_preds.save(f"{folder}/pred_instances.png")
+            colored_instance_gt.save(f"{folder}/gt_instances.png")
+            wandb.log({"pred_instances": wandb.Image(colored_instance_preds)})
+            wandb.log({"gt_instances": wandb.Image(colored_instance_gt)})
+        break
 
-        for idx, (x, y) in enumerate(loader):
-            x = x.to(device=device)
-            with torch.no_grad():
-                preds = torch.sigmoid(model(x))
-                preds = (preds > 0.5).float()
 
-            torchvision.utils.save_image(
-                preds, f"{folder}/pred_{idx}.png"
+def visualize_3d_image_instances(image, save_path, wandb_tracking=False):
+    # if on GPU
+    image_np = image.cpu().numpy()
+
+    # Get indices and values where the voxel value is not zero
+    x, y, z = np.indices(image_np.shape)
+    x, y, z = x[image_np > 0], y[image_np > 0], z[image_np > 0]
+    values = image_np[image_np > 0]
+
+    # Get unique class labels
+    unique_classes = np.unique(values)
+
+    # Generate a color for each unique class
+    class_colors = {
+        cls: f'rgb({int(cls*80) % 256}, {int(cls*50) % 256}, {int(cls*100) % 256})'
+        for cls in unique_classes
+    }
+
+    # Assign colors based on class labels
+    colors = np.array([class_colors[val] for val in values])
+
+    # Create 3D scatter plot
+    fig = go.Figure(data=[
+        go.Scatter3d(
+            x=x.flatten(),
+            y=y.flatten(),
+            z=z.flatten(),
+            mode='markers',
+            marker=dict(
+                size=5,
+                color=colors,  # Color by class value
+                opacity=0.2
             )
-            # torchvision.utils.save_image(y.unsqueeze(1), f"{folder}/{idx}.png")
-            torchvision.utils.save_image(Dataset.split_mask(y), f"{folder}/{idx}.png")
+        )
+    ])
 
-    else:
-        for idx, x in enumerate(loader):
-            x = x.to(device=device, dtype=torch.float32)
-            with torch.no_grad():
-                preds = torch.sigmoid(model(x))
-                preds = (preds > 0.5).float()
+    # Update layout for better visualization
+    fig.update_layout(scene=dict(
+        xaxis=dict(nticks=4, range=[0, image_np.shape[0]]),
+        yaxis=dict(nticks=4, range=[0, image_np.shape[1]]),
+        zaxis=dict(nticks=4, range=[0, image_np.shape[2]]),
+        aspectratio=dict(x=1, y=1, z=1)
+    ))
 
-            torchvision.utils.save_image(
-                preds, f"{folder}/pred_{idx}.png"
-            )
-    model.train()
+    # Save the figure to a temporary file
+    fig.write_html(save_path)
+
+    # Optionally log to Weights & Biases
+    if wandb_tracking:
+        table = wandb.Table(columns=["plotly_figure"])
+        table.add_data(wandb.Html(save_path))
+        wandb.log({os.path.basename(save_path): table})
+
+
+# def save_test_predictions_as_imgs(
+#         loader, model, folder=r"C:\BGU\seg_unet\Fluo-N2DH-SIM+_training-datasets\saved", device="cuda", type="train"
+# ):
+#     model.eval()
+#     if type == "train":
+#
+#         for idx, (x, y) in enumerate(loader):
+#             x = x.to(device=device)
+#             with torch.no_grad():
+#                 preds = torch.sigmoid(model(x))
+#                 preds = (preds > 0.5).float()
+#
+#             torchvision.utils.save_image(
+#                 preds, f"{folder}/pred_{idx}.png"
+#             )
+#             # torchvision.utils.save_image(y.unsqueeze(1), f"{folder}/{idx}.png")
+#             torchvision.utils.save_image(Dataset.split_mask(y), f"{folder}/{idx}.png")
+#
+#     else:
+#         for idx, x in enumerate(loader):
+#             x = x.to(device=device, dtype=torch.float32)
+#             with torch.no_grad():
+#                 preds = torch.sigmoid(model(x))
+#                 preds = (preds > 0.5).float()
+#
+#             torchvision.utils.save_image(
+#                 preds, f"{folder}/pred_{idx}.png"
+#             )
+#     model.train()
 
 def separate_masks(instance_mask):
     unique_labels = np.unique(instance_mask)
