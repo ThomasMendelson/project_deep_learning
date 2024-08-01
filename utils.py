@@ -1,6 +1,8 @@
 import os
 import torch
 import wandb
+import skfmm
+from scipy.spatial import KDTree
 import torchvision
 from PIL import Image
 import numpy as np
@@ -45,22 +47,14 @@ def custom_collate_fn(batch):
 
     return images, masks
 
-def get_loader(
-        dir,
-        maskdir,
-        train_aug,
-        shuffle,
-        batch_size,
-        crop_size,
-        device,
-        num_workers=0,
-        pin_memory=True,
-        three_d=False,
-):
+
+def get_loader(dir, seg_dir, tra_dir, train_aug, shuffle, batch_size, crop_size,
+               device, num_workers=0, pin_memory=True, three_d=False, ):
     if not three_d:
         ds = Dataset(
             image_dir=dir,
-            mask_dir=maskdir,
+            seg_dir=seg_dir,
+            tra_dir=tra_dir,
             crop_size=crop_size,
             train_aug=train_aug
         )
@@ -76,7 +70,8 @@ def get_loader(
     else:
         ds = Dataset3D(
             image_dir=dir,
-            mask_dir=maskdir,
+            seg_dir=seg_dir,
+            tra_dir=tra_dir,
             crop_size=crop_size,
             train_aug=train_aug,
             device=device,
@@ -88,21 +83,24 @@ def get_loader(
             pin_memory=pin_memory,
             shuffle=shuffle,
             drop_last=True,
-            # collate_fn=custom_collate_fn,
         )
 
     return loader
 
 
-def get_cell_instances(input_np, three_d=False):
+def get_cell_instances(input_np, marker=False,  three_d=False):
     if three_d:
         strel = np.array([[[0, 0, 0], [0, 1, 0], [0, 0, 0]], [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
-                                [[0, 0, 0], [0, 1, 0], [0, 0, 0]]])
+                          [[0, 0, 0], [0, 1, 0], [0, 0, 0]]])
     else:
         strel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]])
-    foreground_mask = (input_np == 2).astype(np.uint8)
+
+    if marker:
+        foreground_mask = input_np
+    else:
+        foreground_mask = (input_np == 2).astype(np.uint8)
     labeled, max_num = ndimage.label(foreground_mask, structure=strel)
-    return labeled  # , np.array(max_num).astype(np.float32)
+    return labeled, max_num
 
 
 def check_accuracy(loader, model, device="cuda", one_image=False, three_d=False):
@@ -117,7 +115,7 @@ def check_accuracy(loader, model, device="cuda", one_image=False, three_d=False)
             predicted_classes = predict_classes(preds).cpu().numpy()  # predict the class 0/1/2
             gt = y.numpy()
             for i in range(predicted_classes.shape[0]):
-                pred_labels_mask = get_cell_instances(predicted_classes[i], three_d=three_d)
+                pred_labels_mask, _ = get_cell_instances(predicted_classes[i], three_d=three_d)
                 accuracy, _ = calc_SEG_measure(pred_labels_mask, gt[i])
                 if accuracy != -1:
                     seg += accuracy
@@ -129,6 +127,7 @@ def check_accuracy(loader, model, device="cuda", one_image=False, three_d=False)
 
     print(f"seg score: {seg / num_iters}")
     model.train()
+
 
 def check_accuracy_multy_models(loader, models, device="cuda", one_image=False, three_d=False):
     print("=> Checking accuracy")
@@ -145,7 +144,7 @@ def check_accuracy_multy_models(loader, models, device="cuda", one_image=False, 
             predicted_classes = predict_classes(preds).cpu().numpy()  # predict the class 0/1/2
             gt = y.numpy()
             for i in range(predicted_classes.shape[0]):
-                pred_labels_mask = get_cell_instances(predicted_classes[i], three_d=three_d)
+                pred_labels_mask, _ = get_cell_instances(predicted_classes[i], three_d=three_d)
                 accuracy, _ = calc_SEG_measure(pred_labels_mask, gt[i])
                 if accuracy != -1:
                     seg += accuracy
@@ -160,6 +159,8 @@ def check_accuracy_multy_models(loader, models, device="cuda", one_image=False, 
     print(f"seg score for avg models : {seg / num_iters}")
     for model in models:
         model.train()
+
+
 def apply_color_map(input_tensor, three_d=False):
     if three_d:
         if input_tensor.dim() == 3:
@@ -217,8 +218,10 @@ def save_predictions_as_imgs(loader, model, folder, device="cuda", three_d=False
 
         for i in range(predicted_classes.shape[0]):  # Loop through the batch
             if three_d and idx == 0:
-                visualize_3d_image_from_classes(image=predicted_classes[i], save_path=f"{folder}/pred_{idx}_{i}.html", wandb_tracking=wandb_tracking)
-                visualize_3d_image_from_classes(image=y[i], save_path=f"{folder}/gt_{idx}_{i}.html", wandb_tracking=wandb_tracking)
+                visualize_3d_image_from_classes(image=predicted_classes[i], save_path=f"{folder}/pred_{idx}_{i}.html",
+                                                wandb_tracking=wandb_tracking)
+                visualize_3d_image_from_classes(image=y[i], save_path=f"{folder}/gt_{idx}_{i}.html",
+                                                wandb_tracking=wandb_tracking)
                 # pred_img = colored_preds[i].permute(1, 2, 3, 0).cpu().numpy()
                 # gt_img = colored_gt[i].permute(1, 2, 3, 0).cpu().numpy()
                 # middle_slice = pred_img.shape[0]//2
@@ -244,6 +247,7 @@ def save_predictions_as_imgs(loader, model, folder, device="cuda", three_d=False
             break
 
     model.train()
+
 
 def visualize_3d_image_from_classes(image, save_path, wandb_tracking=False):
     # if on GPU
@@ -294,11 +298,13 @@ def save_instance_by_colors(loader, model, folder, device="cuda", three_d=False,
         with torch.no_grad():
             preds = model(x)
             predicted_classes = predict_classes(preds).cpu().numpy()
-        labeled_preds =get_cell_instances(predicted_classes[0], three_d=three_d)
+        labeled_preds, _ = get_cell_instances(predicted_classes[0], three_d=three_d)
         gt = y[0].cpu().numpy().astype(np.uint8)
         if three_d:
-            visualize_3d_image_instances(image=labeled_preds, save_path=f"{folder}/pred_instances.html", wandb_tracking=wandb_tracking)
-            visualize_3d_image_instances(image=gt, save_path=f"{folder}/gt_instances.html", wandb_tracking=wandb_tracking)
+            visualize_3d_image_instances(image=labeled_preds, save_path=f"{folder}/pred_instances.html",
+                                         wandb_tracking=wandb_tracking)
+            visualize_3d_image_instances(image=gt, save_path=f"{folder}/gt_instances.html",
+                                         wandb_tracking=wandb_tracking)
         else:
             colored_instance_preds = Image.fromarray(get_instance_color(labeled_preds))
             colored_instance_gt = Image.fromarray(get_instance_color(gt))
@@ -310,7 +316,6 @@ def save_instance_by_colors(loader, model, folder, device="cuda", three_d=False,
 
 
 def visualize_3d_image_instances(image, save_path, wandb_tracking=False):
-
     # Get indices and values where the voxel value is not zero
     x, y, z = np.indices(image.shape)
     x, y, z = x[image > 0], y[image > 0], z[image > 0]
@@ -321,7 +326,7 @@ def visualize_3d_image_instances(image, save_path, wandb_tracking=False):
 
     # Generate a color for each unique class
     class_colors = {
-        cls: f'rgb({int(cls*80) % 256}, {int(cls*50) % 256}, {int(cls*100) % 256})'
+        cls: f'rgb({int(cls * 80) % 256}, {int(cls * 50) % 256}, {int(cls * 100) % 256})'
         for cls in unique_classes
     }
 
@@ -360,36 +365,6 @@ def visualize_3d_image_instances(image, save_path, wandb_tracking=False):
         table.add_data(wandb.Html(save_path))
         wandb.log({os.path.basename(save_path): table})
 
-
-# def save_test_predictions_as_imgs(
-#         loader, model, folder=r"C:\BGU\seg_unet\Fluo-N2DH-SIM+_training-datasets\saved", device="cuda", type="train"
-# ):
-#     model.eval()
-#     if type == "train":
-#
-#         for idx, (x, y) in enumerate(loader):
-#             x = x.to(device=device)
-#             with torch.no_grad():
-#                 preds = torch.sigmoid(model(x))
-#                 preds = (preds > 0.5).float()
-#
-#             torchvision.utils.save_image(
-#                 preds, f"{folder}/pred_{idx}.png"
-#             )
-#             # torchvision.utils.save_image(y.unsqueeze(1), f"{folder}/{idx}.png")
-#             torchvision.utils.save_image(Dataset.split_mask(y), f"{folder}/{idx}.png")
-#
-#     else:
-#         for idx, x in enumerate(loader):
-#             x = x.to(device=device, dtype=torch.float32)
-#             with torch.no_grad():
-#                 preds = torch.sigmoid(model(x))
-#                 preds = (preds > 0.5).float()
-#
-#             torchvision.utils.save_image(
-#                 preds, f"{folder}/pred_{idx}.png"
-#             )
-#     model.train()
 
 def separate_masks(instance_mask):
     unique_labels = np.unique(instance_mask)
@@ -437,3 +412,160 @@ def calc_SEG_measure(pred_labels_mask, gt_labels_mask):
     SEG_measure_avg = np.mean(SEG_measure_array)
     return SEG_measure_avg, SEG_measure_array
 
+
+def inference(class_predictions, marker_predictions, three_d=False):
+    def split_foreground_using_fmm(foreground, markers, num_features):
+        """
+        Splits a single foreground region into multiple segments based on markers using Fast Marching Method.
+
+        Parameters:
+        - foreground: numpy array, binary map of the foreground region (1 for foreground, 0 for background)
+        - markers: numpy array, labeled markers for different regions (0 for no marker, 1 for markers)
+
+        Returns:
+        - segmented_foreground: numpy array, same shape as foreground, where each pixel is labeled according to the nearest marker
+        """
+        # Ensure foreground and markers are numpy arrays
+        foreground = np.array(foreground, dtype=bool)
+
+        # Create a masked array for the markers, masking the background
+        phi = np.ma.MaskedArray(np.ones_like(foreground), mask=~foreground)
+        for marker in range(1, num_features + 1):
+            phi[markers == marker] = 0  # Set marker positions to 0 for FMM
+
+        # Compute the travel time using FMM
+        distances = skfmm.distance(phi)
+        print("Distance", distances)
+        # Assign each pixel in the foreground to the nearest marker
+        segmented_foreground = np.zeros_like(foreground, dtype=np.int32)
+
+        for marker in range(1, num_features + 1):
+            mask = (markers == marker)
+            print(f"mask{marker}:{mask}")
+            # Use the minimum distance to determine the new label
+            min_distance_mask = distances == np.argmin(distances[mask], axis=0) ###############fix this
+            print(f"min_distance_mask{marker}:{min_distance_mask}")
+            segmented_foreground[min_distance_mask] = marker
+
+        return segmented_foreground
+
+    def find_closest_marker_fmm(foreground, labeled_markers):
+        """
+        Finds the closest marker for each pixel in the foreground using Fast Marching Method.
+
+        Parameters:
+        - foreground: numpy array, binary map of the foreground region (1 for foreground, 0 for background)
+        - labeled_markers: numpy array, labeled markers for different regions (0 for no marker, >0 for markers)
+
+        Returns:
+        - closest_marker_map: numpy array, same shape as foreground, where each pixel is labeled with the nearest marker
+        """
+        foreground = np.array(foreground, dtype=bool)
+        labeled_markers = np.array(labeled_markers, dtype=np.int32)
+
+        closest_marker_map = np.zeros_like(foreground, dtype=np.int32)
+        min_distances = np.full(foreground.shape, np.inf)
+
+        unique_markers = np.unique(labeled_markers)
+        unique_markers = unique_markers[unique_markers > 0]
+
+        for marker in unique_markers:
+            marker_mask = (labeled_markers == marker)
+
+            if np.any(marker_mask):
+                phi = np.ma.MaskedArray(np.ones_like(foreground), mask=~foreground)
+                phi[marker_mask] = 0
+
+                distances = skfmm.distance(phi)
+
+                # Adding detailed debugging output
+                print(f"Marker {marker}:")
+                print(f"Marker Mask:\n{marker_mask.astype(int)}")
+                print(f"Distances:\n{distances}")
+                print(f"Current min_distances:\n{min_distances}")
+
+                update_mask = (distances < min_distances) & foreground
+                print(f"Update Mask:\n{update_mask}")
+
+                # Ensure update only happens where update_mask is True
+                min_distances[update_mask] = distances[update_mask]
+                closest_marker_map[update_mask] = marker
+
+                print(f"Updated min_distances:\n{min_distances}")
+                print(f"Closest Marker Map:\n{closest_marker_map}")
+                print("-------------------------------------------------")
+
+        return closest_marker_map
+
+    def find_nearest_markers(foreground, markers, num_features):
+        """
+        Finds the nearest marker for each pixel in the foreground with a value of 1 and
+        returns an array where each pixel in the foreground is labeled with the value of the nearest marker.
+
+        Parameters:
+        - foreground (np.array): 2D array where pixels of interest are marked with 1.
+        - markers (np.array): 2D array where non-zero values indicate different marker types.
+        - num_features (int): The number of unique non-zero elements in the markers array.
+
+        Returns:
+        - np.array: Array where each pixel in the foreground has the value of the nearest marker.
+        """
+        # Find coordinates of pixels with value 1 in the foreground
+        foreground_coords = np.argwhere(foreground == 1)
+
+        # Find coordinates of markers and their values
+        marker_coords = np.argwhere(markers > 0)
+        marker_values = markers[marker_coords[:, 0], marker_coords[:, 1]]
+
+        # Create KDTree for marker coordinates
+        tree = KDTree(marker_coords)
+
+        # Find the nearest marker for each foreground pixel
+        distances, indices = tree.query(foreground_coords)
+        nearest_marker_values = marker_values[indices]
+
+        # Create an output array with the same shape as foreground, initialized to 0
+        result_array = np.zeros(foreground.shape, dtype=markers.dtype)
+
+        # Use advanced indexing to set the nearest marker values
+        result_array[foreground == 1] = nearest_marker_values
+
+        return result_array
+
+    # predicted_classes = predict_classes(class_predictions).cpu().numpy()
+    predicted_classes = class_predictions.cpu().numpy()
+    predicted_foregound = (predicted_classes == 2).astype(np.uint8)
+    labeled_markers, num_features = get_cell_instances(marker_predictions.cpu().numpy(), marker=True)
+    print(f"split_foreground_using_fmm input:\npredicted_foregound: {predicted_foregound}\nlabeled_markers: {labeled_markers}\nnum_features: {num_features}")
+    print("-------------------------------------------------")
+    # labeled_preds = split_foreground_using_fmm(predicted_foregound, labeled_markers, num_features)
+    labeled_preds = find_closest_marker_fmm(predicted_foregound, labeled_markers)
+    # labeled_preds = find_nearest_markers(predicted_foregound, labeled_markers, num_features)
+    return labeled_preds
+
+
+def t_inference():
+    markers = np.array([[0, 0, 0, 0, 0],
+                        [0, 1, 0, 1, 0],
+                        [0, 0, 0, 0, 0],
+                        [0, 0, 0, 0, 0],
+                        [0, 1, 0, 0, 0]])
+
+    pred = np.array([[0, 1, 1, 0, 0],
+                     [2, 2, 1, 2, 0],
+                     [1, 2, 1, 1, 0],
+                     [1, 2, 1, 1, 1],
+                     [2, 2, 2, 2, 1]],)
+
+
+    pred, markers = torch.from_numpy(pred), torch.from_numpy(markers)
+    image = inference(pred, markers, False)
+    print("result",image)
+    # plt.imshow(image, cmap='gray')  # Use 'gray' colormap for grayscale images
+    # plt.axis('off')  # Turn off axis labels
+    # plt.savefig('output.png')  # Save the plot as an image file
+    # plt.close()  # Close the figure to release memory
+
+
+if __name__ == "__main__":
+    t_inference()

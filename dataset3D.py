@@ -1,24 +1,18 @@
 import os
-import cv2
-import random
 import torch
+import random
+import numpy as np
 import torchio as tio
-from PIL import Image
 import tifffile as tiff
 from torch.utils.data import Dataset
-from torchvision import transforms
-import torchvision.transforms.functional as TF
-import numpy as np
 
-
-# import albumentations as A
-# from albumentations.pytorch import ToTensorV2
 
 
 class Dataset3D(Dataset):
-    def __init__(self, image_dir, crop_size, device, mask_dir=None, train_aug=False):
+    def __init__(self, image_dir, crop_size, device, seg_dir=None, tra_dir=None, train_aug=False):
         self.image_dir = image_dir
-        self.mask_dir = mask_dir
+        self.seg_dir = seg_dir
+        self.tra_dir = tra_dir
         self.train_aug = train_aug
         self.images = os.listdir(image_dir)
         self.crop_size = crop_size
@@ -28,18 +22,20 @@ class Dataset3D(Dataset):
         return len(self.images)
 
     def __getitem__(self, index):
-        if self.mask_dir is not None:
+        if self.seg_dir is not None:
             img_path = os.path.join(self.image_dir, self.images[index])
-            mask_path = os.path.join(self.mask_dir, self.images[index].replace("t", "man_seg", 1))
+            seg_path = os.path.join(self.seg_dir, self.images[index].replace("t", "man_seg", 1))
+            tra_path = os.path.join(self.tra_dir, self.images[index].replace("t", "man_track", 1))
             image = tiff.imread(img_path).astype(np.float32)
             image = (image - image.mean()) / (image.std())
 
-            mask = tiff.imread(mask_path).astype(np.float32)
+            seg_mask = tiff.imread(seg_path).astype(np.float32)
+            tra_mask = tiff.imread(tra_path).astype(np.float32)
 
             transform = self.get_transform()
-            image, mask = transform(image=image, mask=mask)
+            image, seg_mask, tra_mask = transform(image=image, seg_mask=seg_mask, tra_mask=tra_mask)
 
-            return image, mask
+            return image, seg_mask, tra_mask
 
     @staticmethod
     def detect_edges(mask, threshold=0.25):
@@ -71,7 +67,7 @@ class Dataset3D(Dataset):
         return three_classes_mask
 
     def get_transform(self):
-        def affine(image, mask, p=0.5, max_degrees=15, max_scale=0.2):
+        def affine(image, seg_mask, tra_mask, p=0.5, max_degrees=15, max_scale=0.2):
             if random.random() < p:
                 scales = []
                 degrees = []
@@ -90,37 +86,41 @@ class Dataset3D(Dataset):
                     ),
                 ])
                 image = transforms(image)
-                mask = transforms(mask)
-            return image, mask
+                seg_mask = transforms(seg_mask)
+                tra_mask = transforms(tra_mask)
+            return image, seg_mask, tra_mask
 
-        def horizontal_flip(image, mask, p=0.5):
+        def horizontal_flip(image, seg_mask, tra_mask, p=0.5):
             if random.random() < p:
                 transforms = tio.Compose([
                     tio.RandomFlip(axes=2, flip_probability=1),  # Horizontal
                 ])
                 image = transforms(image)
-                mask = transforms(mask)
-            return image, mask
+                seg_mask = transforms(seg_mask)
+                tra_mask = transforms(tra_mask)
+            return image, seg_mask, tra_mask
 
-        def vertical_flip(image, mask, p=0.5):
+        def vertical_flip(image, seg_mask, tra_mask, p=0.5):
             if random.random() < p:
                 transforms = tio.Compose([
                     tio.RandomFlip(axes=1, flip_probability=1),  # Horizontal
                 ])
                 image = transforms(image)
-                mask = transforms(mask)
-            return image, mask
+                seg_mask = transforms(seg_mask)
+                tra_mask = transforms(tra_mask)
+            return image, seg_mask, tra_mask
 
-        def depth_flip(image, mask, p=0.5):
+        def depth_flip(image, seg_mask, tra_mask, p=0.5):
             if random.random() < p:
                 transforms = tio.Compose([
                     tio.RandomFlip(axes=0, flip_probability=1),  # Horizontal
                 ])
                 image = transforms(image)
-                mask = transforms(mask)
-            return image, mask
+                seg_mask = transforms(seg_mask)
+                tra_mask = transforms(tra_mask)
+            return image, seg_mask, tra_mask
 
-        def random_crop(image, mask, crop_size, threshold=500):
+        def random_crop(image, seg_mask, tra_mask, crop_size, threshold=500):
             depth, height, width = image.shape[-3:]
             crop_depth, crop_height, crop_width = crop_size
 
@@ -135,40 +135,41 @@ class Dataset3D(Dataset):
                 # Crop the image
                 cropped_image = image[:, start_d:start_d + crop_depth, start_h:start_h + crop_height,
                                 start_w:start_w + crop_width]
-                cropped_mask = mask[:, start_d:start_d + crop_depth, start_h:start_h + crop_height,
+                cropped_seg_mask = seg_mask[:, start_d:start_d + crop_depth, start_h:start_h + crop_height,
                                start_w:start_w + crop_width]
+                cropped_tra_mask = tra_mask[:, start_d:start_d + crop_depth, start_h:start_h + crop_height,
+                                   start_w:start_w + crop_width]
                 if torch.sum(cropped_image > 0) > threshold * crop_depth:
                     break
 
-            return cropped_image, cropped_mask
+            return cropped_image, cropped_seg_mask, cropped_tra_mask
 
-        def to_tensor(image, mask):
-            # image, mask = torch.from_numpy(image).to(self.device), torch.from_numpy(mask).to(self.device)
-            image, mask = torch.from_numpy(image), torch.from_numpy(mask)
-            return image.unsqueeze(0), mask.unsqueeze(0)
+        def to_tensor(image, seg_mask, tra_mask):
+            image, seg_mask, tra_mask = torch.from_numpy(image), torch.from_numpy(seg_mask), torch.from_numpy(tra_mask)
+            return image.unsqueeze(0), seg_mask.unsqueeze(0), tra_mask.unsqueeze(0)
 
-        def val_tensor(image, mask):
-            depth = image.shape[-3]
-            transforms = tio.Compose([
-                tio.Resize(target_shape=(256, 256, depth)),  # Horizontal
-            ])
-            image = transforms(image)
-            mask = transforms(mask)
-            print(f"Image.shape: {image.shape}")
-            print(f"mask.shape: {mask.shape}")
-            return image, mask
+        # def val_tensor(image, mask):
+        #     depth = image.shape[-3]
+        #     transforms = tio.Compose([
+        #         tio.Resize(target_shape=(256, 256, depth)),  # Horizontal
+        #     ])
+        #     image = transforms(image)
+        #     mask = transforms(mask)
+        #     print(f"Image.shape: {image.shape}")
+        #     print(f"mask.shape: {mask.shape}")
+        #     return image, mask
 
-        def transform(image, mask):
-            image, mask = to_tensor(image, mask)
+        def transform(image, seg_mask, tra_mask):
+            image, seg_mask, tra_mask = to_tensor(image, seg_mask, tra_mask)
             if self.train_aug:
-                image, mask = affine(image, mask, p=0.5, max_degrees=15, max_scale=0.2)
-                image, mask = horizontal_flip(image, mask, p=0.5)
-                image, mask = vertical_flip(image, mask, p=0.5)
-                image, mask = depth_flip(image, mask, p=0.5)
-                image, mask = random_crop(image, mask, crop_size=self.crop_size)
+                image, seg_mask, tra_mask = affine(image, seg_mask, tra_mask, p=0.5, max_degrees=15, max_scale=0.2)
+                image, seg_mask, tra_mask = horizontal_flip(image, seg_mask, tra_mask, p=0.5)
+                image, seg_mask, tra_mask = vertical_flip(image, seg_mask, tra_mask, p=0.5)
+                image, seg_mask, tra_mask = depth_flip(image, seg_mask, tra_mask, p=0.5)
+                image, seg_mask, tra_mask = random_crop(image, seg_mask, tra_mask, crop_size=self.crop_size)
             else:
-                image, mask = random_crop(image, mask, crop_size=self.crop_size)
-            return image, mask.squeeze(0)
+                image, seg_mask, tra_mask = random_crop(image, seg_mask, tra_mask, crop_size=self.crop_size)
+            return image, seg_mask.squeeze(0), tra_mask.squeeze(0)
 
         return transform
 

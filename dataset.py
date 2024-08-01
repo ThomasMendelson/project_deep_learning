@@ -9,14 +9,11 @@ import numpy as np
 import torch
 
 
-# import albumentations as A
-# from albumentations.pytorch import ToTensorV2
-
-
 class Dataset(Dataset):
-    def __init__(self, image_dir, crop_size, mask_dir=None, train_aug=False):
+    def __init__(self, image_dir, crop_size, seg_dir=None, tra_dir=None, train_aug=False):
         self.image_dir = image_dir
-        self.mask_dir = mask_dir
+        self.seg_dir = seg_dir
+        self.tra_dir = tra_dir
         self.train_aug = train_aug
         self.images = os.listdir(image_dir)
         self.crop_size = crop_size
@@ -25,30 +22,19 @@ class Dataset(Dataset):
         return len(self.images)
 
     def __getitem__(self, index):
-        if self.mask_dir is not None:
+        if self.seg_dir is not None:
             img_path = os.path.join(self.image_dir, self.images[index])
-            mask_path = os.path.join(self.mask_dir, self.images[index].replace("t", "man_seg", 1))
+            seg_path = os.path.join(self.seg_dir, self.images[index].replace("t", "man_seg", 1))
+            tra_path = os.path.join(self.tra_dir, self.images[index].replace("t", "man_track", 1))
             image = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
             image = image.astype(np.float32)
             image = (image - image.mean()) / (image.std())
-            # if len(image.shape) == 2:  # (height, width)
-            #     image = np.expand_dims(image, axis=-1)
-            mask = cv2.imread(mask_path, cv2.IMREAD_UNCHANGED)
-            mask = mask.astype(np.float32)
-            # print("\nin dataset before augmentations = self.transform(image=image, mask=mask)")
-            # print(f"image shape: {image.shape}, type: {image.dtype}, min value: {np.min(image)}, max value: {np.max(image)}")
-            # print(f"mask shape: {mask.shape}, type: {mask.dtype}, min value: {np.min(mask)}, max value: {np.max(mask)}")
+            seg_mask = cv2.imread(seg_path, cv2.IMREAD_UNCHANGED).astype(np.float32)
+            tra_mask = cv2.imread(seg_path, cv2.IMREAD_UNCHANGED).astype(np.float32)
 
-            # if self.train_aug:
-            #     crop_size = int(min(image.shape[0], image.shape[1]) * random.uniform(0.8, 1.0))
-            #     transform = get_train_transform(crop_size, self.resize)
-            # else:
-            #     transform = get_val_transform(self.resize)
             transform = self.get_transform()
-            augmentations = transform(image=image, mask=mask)
-            image = augmentations["image"]
-            mask = augmentations["mask"]
-            return image, mask
+            image, seg_mask, tra_mask = transform(image=image, seg_mask=seg_mask, tra_mask=tra_mask)
+            return image, seg_mask, tra_mask
         # else:
         #     img_path = os.path.join(self.image_dir, self.images[index])
         #     image = np.array(Image.open(img_path).convert("RGB"))
@@ -91,7 +77,7 @@ class Dataset(Dataset):
         return three_classes_mask
 
     def get_transform(self):
-        def affine(image, mask, p=0.5, max_degrees=45, max_scale=0.2, max_shear=10):
+        def affine(image, seg_mask, tra_mask, p=0.5, max_degrees=45, max_scale=0.2, max_shear=10):
             if random.random() < p:
                 degrees = random.uniform(-max_degrees, max_degrees)
                 scale = random.uniform(-max_scale, max_scale)
@@ -99,75 +85,86 @@ class Dataset(Dataset):
                 shear_x = random.uniform(-max_shear, max_shear)
                 shear_y = random.uniform(-max_shear, max_shear)
                 aff_image = TF.affine(image, angle=degrees, translate=(0, 0), scale=scale, shear=(shear_x, shear_y))
-                aff_mask = TF.affine(mask, angle=degrees, translate=(0, 0), scale=scale, shear=(shear_x, shear_y))
-                return aff_image, aff_mask
-            return image, mask
+                aff_seg_mask = TF.affine(seg_mask, angle=degrees, translate=(0, 0), scale=scale,
+                                         shear=(shear_x, shear_y))
+                aff_tra_mask = TF.affine(tra_mask, angle=degrees, translate=(0, 0), scale=scale,
+                                         shear=(shear_x, shear_y))
+                return aff_image, aff_seg_mask, aff_tra_mask
+            return image, seg_mask, tra_mask
 
-        def horizontal_flip(image, mask, p=0.5):
+        def horizontal_flip(image, seg_mask, tra_mask, p=0.5):
             if random.random() < p:
-                return TF.hflip(image), TF.hflip(mask)
-            return image, mask
+                return TF.hflip(image), TF.hflip(seg_mask), TF.hflip(tra_mask)
+            return image, seg_mask, tra_mask
 
-        def vertical_flip(image, mask, p=0.5):
+        def vertical_flip(image, seg_mask, tra_mask, p=0.5):
             if random.random() < p:
-                return TF.vflip(image), TF.vflip(mask)
-            return image, mask
+                return TF.vflip(image), TF.vflip(seg_mask), TF.vflip(tra_mask)
+            return image, seg_mask, tra_mask
 
-        def random_crop(image, mask, crop_size, num_crops=10, threshold=500):
+        def random_crop(image, seg_mask, tra_mask, crop_size, num_crops=10, threshold=500):
             # image, mask are PIL
             count = 0
             images = np.zeros((num_crops, crop_size, crop_size), dtype=np.float32)
-            masks = np.zeros((num_crops, crop_size, crop_size), dtype=np.float32)
+            seg_masks = np.zeros((num_crops, crop_size, crop_size), dtype=np.float32)
+            tra_masks = np.zeros((num_crops, crop_size, crop_size), dtype=np.float32)
             while count < num_crops:
                 i, j, h, w = transforms.RandomCrop.get_params(
                     image, output_size=(crop_size, crop_size))
-                cropped_image, cropped_mask = TF.crop(image, i, j, h, w), TF.crop(mask, i, j, h, w)
-                cropped_image, cropped_mask = np.array(cropped_image), np.array(cropped_mask)
-                if np.count_nonzero(cropped_mask) > threshold:
+                cropped_image, cropped_seg_mask, cropped_tra_mask = (TF.crop(image, i, j, h, w),
+                                                                     TF.crop(seg_masks, i, j, h, w),
+                                                                     TF.crop(tra_masks, i, j, h, w))
+                cropped_image, cropped_seg_mask, cropped_tra_mask = np.array(cropped_image), np.array(
+                    cropped_seg_mask), np.array(cropped_tra_mask)
+                if np.count_nonzero(cropped_seg_mask) > threshold:
                     images[count] = cropped_image
-                    masks[count] = cropped_mask
+                    seg_masks[count] = cropped_seg_mask
+                    tra_masks[count] = cropped_tra_mask
                     count += 1
 
-            return images, masks
+            return images, seg_masks, tra_masks
 
-        def to_tensor(images, masks):
+        def to_tensor(images, seg_masks, tra_masks):
             # Convert batch of images and masks to PyTorch tensors (batch_size, C, H, W)
             batch_size = images.shape[0]
             tensor_images = torch.zeros((batch_size, 1, images.shape[1], images.shape[2]), dtype=torch.float32)
-            tensor_masks = torch.zeros((batch_size, masks.shape[1], masks.shape[2]), dtype=torch.float32)
+            tensor_seg_masks = torch.zeros((batch_size, seg_masks.shape[1], seg_masks.shape[2]), dtype=torch.float32)
+            tensor_tra_masks = torch.zeros((batch_size, tra_masks.shape[1], tra_masks.shape[2]), dtype=torch.float32)
 
             for i in range(batch_size):
                 tensor_images[i] = transforms.ToTensor()(images[i])
-                tensor_masks[i] = transforms.ToTensor()(masks[i])
+                tensor_seg_masks[i] = transforms.ToTensor()(seg_masks[i])
+                tensor_tra_masks[i] = transforms.ToTensor()(tra_masks[i])
 
-            return tensor_images, tensor_masks
+            return tensor_images, tensor_seg_masks, tensor_tra_masks
 
-        def val_to_tensor(image, mask):
+        def val_to_tensor(image, seg_mask, tra_mask):
             # Convert  images and masks to PyTorch tensors (1, 1, H, W)
             # input (H, W)
             if len(image.shape) == 2:  # Grayscale image
                 image = np.expand_dims(image, axis=0)
 
-
             image = np.expand_dims(image, axis=0)
-            mask = np.expand_dims(mask, axis=0)
+            seg_mask = np.expand_dims(seg_mask, axis=0)
+            tra_mask = np.expand_dims(tra_mask, axis=0)
 
             tensor_image = torch.from_numpy(image).float()
-            tensor_mask = torch.from_numpy(mask).float()
-            return tensor_image, tensor_mask
+            tensor_seg_mask = torch.from_numpy(seg_mask).float()
+            tensor_tra_mask = torch.from_numpy(tra_mask).float()
+            return tensor_image, tensor_seg_mask, tensor_tra_mask
 
-        def transform(image, mask):
+        def transform(image, seg_mask, tra_mask):
             if self.train_aug:
-                # image, mask = rotate(image, mask, p=0.5)
-                image, mask = Image.fromarray(image), Image.fromarray(mask)
-                image, mask = affine(image, mask, p=0.5, max_degrees=45, max_scale=0.2, max_shear=10)
-                image, mask = horizontal_flip(image, mask, p=0.5)
-                image, mask = vertical_flip(image, mask, p=0.5)
-                image, mask = random_crop(image, mask, crop_size=self.crop_size)
-                image, mask = to_tensor(np.array(image), np.array(mask))
-                return {'image': image, 'mask': mask}
-            image, mask = val_to_tensor(image, mask)
-            return {'image': image, 'mask': mask}
+                image, seg_mask, tra_mask = Image.fromarray(image), Image.fromarray(seg_mask), Image.fromarray(tra_mask)
+                image, seg_mask, tra_mask = affine(image, seg_mask, tra_mask, p=0.5, max_degrees=45, max_scale=0.2,
+                                                   max_shear=10)
+                image, seg_mask, tra_mask = horizontal_flip(image, seg_mask, tra_mask, p=0.5)
+                image, seg_mask, tra_mask = vertical_flip(image, seg_mask, tra_mask, p=0.5)
+                image, seg_mask, tra_mask = random_crop(image, seg_mask, tra_mask, crop_size=self.crop_size)
+                image, seg_mask, tra_mask = to_tensor(np.array(image), np.array(seg_mask), np.array(tra_mask))
+                return image, seg_mask, tra_mask
+            image, seg_mask, tra_mask = val_to_tensor(image, seg_mask, tra_mask)
+            return image, seg_mask, tra_mask
 
         return transform
 
@@ -335,7 +332,7 @@ def t_transform():
     if train_aug:
         gt = mask.cpu().numpy().astype(np.uint8)
         for i in range(5):
-            colored_instance_gt = get_instance_color(gt[i,0])
+            colored_instance_gt = get_instance_color(gt[i, 0])
             plt.figure()
             # plt.imshow(colored_instance_gt)
             plt.imshow(image[i, 0])
@@ -352,6 +349,5 @@ def t_transform():
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-
 
     t_transform()

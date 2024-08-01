@@ -120,7 +120,8 @@ class ViT_UNet(nn.Module):
             self.up4 = UpBlock3D(2 * 64, 32, 64)
             self.beforelast = UpBlock3D(2 * 32, 32, 32, True)
             # self.beforelast = UpBlock3D(32, 32, 32, True)
-            self.outc = nn.Conv3d(32, out_channels, kernel_size=1)
+            self.out_classes = nn.Conv3d(32, out_channels, kernel_size=1)
+            self.out_marker = nn.Conv3d(32, 1, kernel_size=1)
         else:
             self.doubleconv = UpBlock(1, 32, 16, True)
             self.up1 = UpBlock(512, 256, 512)
@@ -129,7 +130,8 @@ class ViT_UNet(nn.Module):
             self.up4 = UpBlock(2 * 64, 32, 64)
             self.beforelast = UpBlock(2 * 32, 32, 32, True)
             # self.beforelast = UpBlock(32, 32, 32, True)
-            self.outc = nn.Conv2d(32, out_channels, kernel_size=1)
+            self.out_classes = nn.Conv2d(32, out_channels, kernel_size=1)
+            self.out_marker = nn.Conv2d(32, 1, kernel_size=1)
 
     def reconstruct_image_from_patches(self, patches, img_size, patch_size):
         """
@@ -228,7 +230,8 @@ class ViT_UNet(nn.Module):
         x = self.up4(x, skip_connections[2])
         x = self.beforelast(x, skip_connections[3])  # to add back the skip connection from the image chage back lines: 131, 139, 231, 236
         # x = self.beforelast(x, None)
-        return self.outc(x)
+        return self.out_classes(x), self.out_marker(x)
+
 
 
 # #-----------------------------------------------------------------------------------------

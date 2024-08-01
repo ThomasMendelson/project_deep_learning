@@ -8,8 +8,8 @@ import wandb
 import plotly.graph_objects as go
 import numpy as np
 
-DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
-WANDB_TRACKING = True
+DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
+WANDB_TRACKING = False
 
 # def plot_voxels_type1(voxels):
 #     """
@@ -221,14 +221,22 @@ save_path2 = '3d_image2.html'
 
 
 mask_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG/man_seg070.tif"
-voxels_type2 = torch.from_numpy(tiff.imread(mask_path).astype(np.float32)).to(DEVICE).unsqueeze(0)  # every cell have different value
-voxels_type2 = random_crop(voxels_type2)
-voxels_type1 = split_mask(voxels_type2).to(DEVICE)  # 0/1/2
-print("going to visualize_3d_image")
-visualize_3d_image_from_classes(voxels_type1[0], save_path1)
+tra_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/TRA/man_track070.tif"
+# voxels_type2 = torch.from_numpy(tiff.imread(mask_path).astype(np.float32)).to(DEVICE).unsqueeze(0)  # every cell have different value
+# voxels_type2 = random_crop(voxels_type2)
+# voxels_type1 = split_mask(voxels_type2).to(DEVICE)  # 0/1/2
+# print("going to visualize_3d_image")
+# visualize_3d_image_from_classes(voxels_type1[0], save_path1)
+#
+# visualize_3d_image_instances(voxels_type2[0], save_path2)
+image = tiff.imread(tra_path)
+d, h, w = image.shape
+image[image > 0] = 1
 
-visualize_3d_image_instances(voxels_type2[0], save_path2)
-
+plt.imshow(image[d//2], cmap='gray')  # Use 'gray' colormap for grayscale images
+plt.title('Middle Slice')
+plt.axis('off')  # Turn off axis labels
+plt.show()
 if WANDB_TRACKING:
     wandb.finish()
 
