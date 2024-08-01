@@ -3,6 +3,7 @@ import torch
 import wandb
 import skfmm
 from scipy.spatial import KDTree
+import time
 import torchvision
 from PIL import Image
 import numpy as np
@@ -110,12 +111,14 @@ def check_accuracy(loader, model, device="cuda", one_image=False, three_d=False)
     num_iters = 0
     model.eval()
     with torch.no_grad():
-        for x, y in loader:
-            preds = model(x.to(device))
-            predicted_classes = predict_classes(preds).cpu().numpy()  # predict the class 0/1/2
-            gt = y.numpy()
+        for data, class_targets, marker_targets in loader:
+            class_predictions, marker_predictions = model(data.to(device))
+            predicted_classes = predict_classes(class_predictions)
+            marker_predictions = predict_classes(marker_predictions)
+
+            gt = class_targets.numpy()
             for i in range(predicted_classes.shape[0]):
-                pred_labels_mask, _ = get_cell_instances(predicted_classes[i], three_d=three_d)
+                pred_labels_mask = inference(predicted_classes[i], marker_predictions[i], three_d=three_d)
                 accuracy, _ = calc_SEG_measure(pred_labels_mask, gt[i])
                 if accuracy != -1:
                     seg += accuracy
@@ -293,20 +296,22 @@ def visualize_3d_image_from_classes(image, save_path, wandb_tracking=False):
 def save_instance_by_colors(loader, model, folder, device="cuda", three_d=False, wandb_tracking=False):
     print("=> saving instance images")
     model.eval()
-    for idx, (x, y) in enumerate(loader):
-        x = x.to(device=device, dtype=torch.float32)
+    for idx, (data, class_targets, marker_targets) in enumerate(loader):
+        data = data.to(device=device, dtype=torch.float32)
         with torch.no_grad():
-            preds = model(x)
-            predicted_classes = predict_classes(preds).cpu().numpy()
-        labeled_preds, _ = get_cell_instances(predicted_classes[0], three_d=three_d)
-        gt = y[0].cpu().numpy().astype(np.uint8)
+            class_predictions, marker_predictions = model(data)
+            predicted_classes = predict_classes(class_predictions)
+            marker_predictions = predict_classes(marker_predictions)
+
+        predicted = inference(predicted_classes[0], marker_predictions[0], three_d=three_d)
+        gt = class_targets[0].cpu().numpy().astype(np.uint8)
         if three_d:
-            visualize_3d_image_instances(image=labeled_preds, save_path=f"{folder}/pred_instances.html",
+            visualize_3d_image_instances(image=predicted, save_path=f"{folder}/pred_instances.html",
                                          wandb_tracking=wandb_tracking)
             visualize_3d_image_instances(image=gt, save_path=f"{folder}/gt_instances.html",
                                          wandb_tracking=wandb_tracking)
         else:
-            colored_instance_preds = Image.fromarray(get_instance_color(labeled_preds))
+            colored_instance_preds = Image.fromarray(get_instance_color(predicted))
             colored_instance_gt = Image.fromarray(get_instance_color(gt))
             colored_instance_preds.save(f"{folder}/pred_instances.png")
             colored_instance_gt.save(f"{folder}/gt_instances.png")
@@ -414,41 +419,6 @@ def calc_SEG_measure(pred_labels_mask, gt_labels_mask):
 
 
 def inference(class_predictions, marker_predictions, three_d=False):
-    def split_foreground_using_fmm(foreground, markers, num_features):
-        """
-        Splits a single foreground region into multiple segments based on markers using Fast Marching Method.
-
-        Parameters:
-        - foreground: numpy array, binary map of the foreground region (1 for foreground, 0 for background)
-        - markers: numpy array, labeled markers for different regions (0 for no marker, 1 for markers)
-
-        Returns:
-        - segmented_foreground: numpy array, same shape as foreground, where each pixel is labeled according to the nearest marker
-        """
-        # Ensure foreground and markers are numpy arrays
-        foreground = np.array(foreground, dtype=bool)
-
-        # Create a masked array for the markers, masking the background
-        phi = np.ma.MaskedArray(np.ones_like(foreground), mask=~foreground)
-        for marker in range(1, num_features + 1):
-            phi[markers == marker] = 0  # Set marker positions to 0 for FMM
-
-        # Compute the travel time using FMM
-        distances = skfmm.distance(phi)
-        print("Distance", distances)
-        # Assign each pixel in the foreground to the nearest marker
-        segmented_foreground = np.zeros_like(foreground, dtype=np.int32)
-
-        for marker in range(1, num_features + 1):
-            mask = (markers == marker)
-            print(f"mask{marker}:{mask}")
-            # Use the minimum distance to determine the new label
-            min_distance_mask = distances == np.argmin(distances[mask], axis=0) ###############fix this
-            print(f"min_distance_mask{marker}:{min_distance_mask}")
-            segmented_foreground[min_distance_mask] = marker
-
-        return segmented_foreground
-
     def find_closest_marker_fmm(foreground, labeled_markers):
         """
         Finds the closest marker for each pixel in the foreground using Fast Marching Method.
@@ -477,27 +447,17 @@ def inference(class_predictions, marker_predictions, three_d=False):
                 phi[marker_mask] = 0
 
                 distances = skfmm.distance(phi)
-
-                # Adding detailed debugging output
-                print(f"Marker {marker}:")
-                print(f"Marker Mask:\n{marker_mask.astype(int)}")
-                print(f"Distances:\n{distances}")
-                print(f"Current min_distances:\n{min_distances}")
+                distances[distances.mask] = np.inf
 
                 update_mask = (distances < min_distances) & foreground
-                print(f"Update Mask:\n{update_mask}")
 
                 # Ensure update only happens where update_mask is True
                 min_distances[update_mask] = distances[update_mask]
                 closest_marker_map[update_mask] = marker
 
-                print(f"Updated min_distances:\n{min_distances}")
-                print(f"Closest Marker Map:\n{closest_marker_map}")
-                print("-------------------------------------------------")
-
         return closest_marker_map
 
-    def find_nearest_markers(foreground, markers, num_features):
+    def find_nearest_markers_KDTree(foreground, markers):
         """
         Finds the nearest marker for each pixel in the foreground with a value of 1 and
         returns an array where each pixel in the foreground is labeled with the value of the nearest marker.
@@ -535,12 +495,9 @@ def inference(class_predictions, marker_predictions, three_d=False):
     # predicted_classes = predict_classes(class_predictions).cpu().numpy()
     predicted_classes = class_predictions.cpu().numpy()
     predicted_foregound = (predicted_classes == 2).astype(np.uint8)
-    labeled_markers, num_features = get_cell_instances(marker_predictions.cpu().numpy(), marker=True)
-    print(f"split_foreground_using_fmm input:\npredicted_foregound: {predicted_foregound}\nlabeled_markers: {labeled_markers}\nnum_features: {num_features}")
-    print("-------------------------------------------------")
-    # labeled_preds = split_foreground_using_fmm(predicted_foregound, labeled_markers, num_features)
+    labeled_markers, _ = get_cell_instances(marker_predictions.cpu().numpy(), marker=True, three_d=three_d)
+
     labeled_preds = find_closest_marker_fmm(predicted_foregound, labeled_markers)
-    # labeled_preds = find_nearest_markers(predicted_foregound, labeled_markers, num_features)
     return labeled_preds
 
 
@@ -558,9 +515,10 @@ def t_inference():
                      [2, 2, 2, 2, 1]],)
 
 
+
     pred, markers = torch.from_numpy(pred), torch.from_numpy(markers)
     image = inference(pred, markers, False)
-    print("result",image)
+    print("result", image)
     # plt.imshow(image, cmap='gray')  # Use 'gray' colormap for grayscale images
     # plt.axis('off')  # Turn off axis labels
     # plt.savefig('output.png')  # Save the plot as an image file

@@ -27,7 +27,7 @@ from utils import (
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-3
 L1_LAMBDA = 1e-5
-DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 8
 NUM_EPOCHS = 1
 NUM_WORKERS = 4
@@ -84,12 +84,15 @@ def train_fn(loader, model, optimizer, loss_functions, scaler):
 
             for loss_fn in loss_functions:
                 if isinstance(loss_fn, nn.CrossEntropyLoss):
+                    print("in CrossEntropyLoss loss")
                     # CrossEntropyLoss expects targets as class indices (without one-hot encoding)
                     loss += loss_fn(class_predictions, class_targets)
                 elif isinstance(loss_fn, nn.BCEWithLogitsLoss):
+                    print("in BCEWithLogitsLoss loss")
                     # BCEWithLogitsLoss expects targets to be of the same shape as predictions
-                    loss += loss_fn(marker_predictions, marker_targets)
+                    loss += loss_fn(marker_predictions.squeeze(1) , marker_targets)
                 elif isinstance(loss_fn, DiceCELoss):
+                    print("in DiceCELoss loss")
                     class_targets_one_hot = F.one_hot(class_targets, num_classes=3).permute(0, 4, 1, 2, 3).float()
                     loss += loss_fn(class_predictions, class_targets_one_hot)
             # Add L1 regularization
@@ -129,7 +132,7 @@ def evaluate_fn(loader, model, loss_functions):
                     loss += loss_fn(class_predictions, class_targets)
 
                 elif isinstance(loss_fn, nn.BCEWithLogitsLoss):
-                    loss += loss_fn(marker_predictions, marker_targets)
+                    loss += loss_fn(marker_predictions.squeeze(1), marker_targets)
 
                 elif isinstance(loss_fn, DiceCELoss):
                     class_targets_one_hot = F.one_hot(class_targets, num_classes=3).permute(0, 4, 1, 2, 3).float()
@@ -171,9 +174,9 @@ def main():
                      classification=False, three_d=THREE_D, device=DEVICE).to(DEVICE)
 
     class_weights = torch.FloatTensor(CLASS_WEIGHTS).to(DEVICE)
-    # criterion = [nn.CrossEntropyLoss(weight=class_weights), nn.BCEWithLogitsLoss]
+    # criterion = [nn.CrossEntropyLoss(weight=class_weights), nn.BCEWithLogitsLoss()]
     criterion = [DiceCELoss(to_onehot_y=False, softmax=True, squared_pred=True, weight=class_weights),
-                 nn.BCEWithLogitsLoss]  # in reference was , batch=True)
+                 nn.BCEWithLogitsLoss()]  # in reference was , batch=True)
 
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-6, verbose=True)
@@ -217,7 +220,7 @@ def main():
             save_checkpoint(checkpoint, filename="checkpoint/vit_checkpoint.pth.tar")
 
             # print some examples to a folder
-            save_predictions_as_imgs(loader=val_loader, model=model, folder="checkpoint/saved_images", device=DEVICE,
+            save_instance_by_colors(loader=val_loader, model=model, folder="checkpoint/saved_images", device=DEVICE,
                                      three_d=THREE_D, wandb_tracking=WANDB_TRACKING)
 
     # check accuracy
@@ -267,39 +270,38 @@ def t_acc():
 #
 #
 #
-def t_save_instance_by_colors():
-    if WANDB_TRACKING:
-        wandb.login(key="12b9b358323faf2af56dc288334e6247c1e8bc63")
-        wandb.init(project="seg_unet_3D",
-                   config={
-                       "epochs": NUM_EPOCHS,
-                       "batch_size": BATCH_SIZE,
-                       "lr": LEARNING_RATE,
-                       "L1_lambda": L1_LAMBDA,
-                       "L2_lambda": WEIGHT_DECAY,
-                       "CE_weight": CLASS_WEIGHTS,
-                       "img_size": CROP_SIZE,
-                   })
-
-    model = ViT_UNet(in_channels=1, out_channels=3, img_size=CROP_SIZE,
-                     patch_size=PATCH_SIZE, hidden_size=HIDDEN_SIZE, mlp_dim=MLP_DIM, num_layers=NUM_LAYERS,
-                     num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE,
-                     classification=False, three_d=THREE_D, device=DEVICE).to(DEVICE)
-
-    load_checkpoint(torch.load("checkpoint/vit_checkpoint2.pth.tar", map_location=torch.device(DEVICE)), model)
-
-    val_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=False,
-                            batch_size=BATCH_SIZE, crop_size=CROP_SIZE, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
-                            three_d=THREE_D, device=DEVICE)
-
-    test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=False,
-                                            batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-                                            pin_memory=PIN_MEMORY, three_d=THREE_D, device=DEVICE)
-
-    save_predictions_as_imgs(loader=val_loader, model=model, folder="checkpoint/saved_images2", device=DEVICE,
-                             three_d=THREE_D, wandb_tracking=WANDB_TRACKING)
-
-    # save_instance_by_colors(test_check_accuracy_loader, model, folder="checkpoint", three_d=THREE_D, device=DEVICE, wandb_tracking=WANDB_TRACKING)
+# def t_save_instance_by_colors():
+#     if WANDB_TRACKING:
+#         wandb.login(key="12b9b358323faf2af56dc288334e6247c1e8bc63")
+#         wandb.init(project="seg_unet_3D",
+#                    config={
+#                        "epochs": NUM_EPOCHS,
+#                        "batch_size": BATCH_SIZE,
+#                        "lr": LEARNING_RATE,
+#                        "L1_lambda": L1_LAMBDA,
+#                        "L2_lambda": WEIGHT_DECAY,
+#                        "CE_weight": CLASS_WEIGHTS,
+#                        "img_size": CROP_SIZE,
+#                    })
+#
+#     model = ViT_UNet(in_channels=1, out_channels=3, img_size=CROP_SIZE,
+#                      patch_size=PATCH_SIZE, hidden_size=HIDDEN_SIZE, mlp_dim=MLP_DIM, num_layers=NUM_LAYERS,
+#                      num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE,
+#                      classification=False, three_d=THREE_D, device=DEVICE).to(DEVICE)
+#
+#     load_checkpoint(torch.load("checkpoint/vit_checkpoint2.pth.tar", map_location=torch.device(DEVICE)), model)
+#
+#     val_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=False,
+#                             batch_size=BATCH_SIZE, crop_size=CROP_SIZE, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
+#                             three_d=THREE_D, device=DEVICE)
+#
+#     test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=False,
+#                                             batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
+#                                             pin_memory=PIN_MEMORY, three_d=THREE_D, device=DEVICE)
+#
+#     save_predictions_as_imgs(loader=val_loader, model=model, folder="checkpoint/saved_images2", device=DEVICE,
+#                              three_d=THREE_D, wandb_tracking=WANDB_TRACKING)
+#
 
 
 if __name__ == "__main__":
