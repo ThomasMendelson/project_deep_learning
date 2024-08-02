@@ -417,6 +417,47 @@ def calc_SEG_measure(pred_labels_mask, gt_labels_mask):
     SEG_measure_avg = np.mean(SEG_measure_array)
     return SEG_measure_avg, SEG_measure_array
 
+def plot_middle_slices_3d_with_gt(pred_labels_mask, gt, num_slices=5):
+    depth = pred_labels_mask.shape[0]
+    start_idx = (depth - num_slices) // 2
+    end_idx = start_idx + num_slices
+    middle_slices_pred = pred_labels_mask[start_idx:end_idx]
+    middle_slices_gt = gt[start_idx:end_idx]
+    fig, axes = plt.subplots(2, num_slices, figsize=(15, 5))
+    for j in range(num_slices):
+        axes[0, j].imshow(middle_slices_pred[j], cmap='gray')
+        axes[0, j].set_title(f'Slice {start_idx + j}')
+        axes[0, j].axis('off')
+
+        axes[1, j].imshow(middle_slices_gt[j], cmap='gray')
+        axes[1, j].set_title(f'GT Slice {start_idx + j}')
+        axes[1, j].axis('off')
+    plt.tight_layout()
+    plt.show()
+
+def save_slices(loader, model, device, num_slices=5, three_d=False):
+    print("=> Saving slices")
+    loader = tqdm(loader)
+    model.eval()
+    with torch.no_grad():
+        for data, class_targets, marker_targets in loader:
+            class_predictions, marker_predictions = model(data.to(device))
+            predicted_classes = predict_classes(class_predictions)
+            marker_predictions = predict_classes(marker_predictions)
+
+            gt = class_targets.numpy()
+            for i in range(predicted_classes.shape[0]):
+
+                # pred_labels_mask = inference(predicted_classes[i], marker_predictions[i], three_d=three_d)
+                # plot_middle_slices_3d_with_gt(pred_labels_mask, gt[i], num_slices=5)
+
+                pred_labels_mask = predicted_classes[i].cpu().numpy()
+                pred_labels_mask = (pred_labels_mask == 2).astype(np.uint8)
+                print(f"marker_predictions[i].shape: {marker_predictions[i].shape}, gt[i].shape: {gt[i].shape}")
+                plot_middle_slices_3d_with_gt(pred_labels_mask, gt[i], num_slices=5)
+                plot_middle_slices_3d_with_gt(marker_predictions[i].cpu().numpy(), gt[i], num_slices=5)
+
+
 
 def inference(class_predictions, marker_predictions, three_d=False):
     def find_closest_marker_fmm(foreground, labeled_markers):

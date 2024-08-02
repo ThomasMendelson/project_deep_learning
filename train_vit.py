@@ -5,8 +5,6 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 import wandb
 
 from tqdm import tqdm
-
-from model import UNET
 from dataset import Dataset
 from dataset3D import Dataset3D
 from transformer.models.vit import ViT_UNet
@@ -21,6 +19,7 @@ from utils import (
     check_accuracy_multy_models,
     save_predictions_as_imgs,
     save_instance_by_colors,
+    save_slices,
 )
 
 # Hyperparameters
@@ -29,10 +28,10 @@ WEIGHT_DECAY = 1e-3
 L1_LAMBDA = 1e-5
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 8
-NUM_EPOCHS = 1
+NUM_EPOCHS = 100
 NUM_WORKERS = 4
 CROP_SIZE = (32, 128, 128)
-CLASS_WEIGHTS = [0.15, 0.6, 0.25]  # [0.1, 0.6, 0.3]  # [0.1, 0.7, 0.2]
+CLASS_WEIGHTS = [0.1, 0.7, 0.2]  # [0.15, 0.6, 0.25]  # [0.1, 0.6, 0.3]
 PATCH_SIZE = 16
 HIDDEN_SIZE = 512
 MLP_DIM = 2048
@@ -44,7 +43,7 @@ DROPOUT_RATE = 0.
 THREE_D = True
 PIN_MEMORY = False
 LOAD_MODEL = False
-WANDB_TRACKING = False
+WANDB_TRACKING = True
 
 # 2D
 # TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02"
@@ -84,15 +83,12 @@ def train_fn(loader, model, optimizer, loss_functions, scaler):
 
             for loss_fn in loss_functions:
                 if isinstance(loss_fn, nn.CrossEntropyLoss):
-                    print("in CrossEntropyLoss loss")
                     # CrossEntropyLoss expects targets as class indices (without one-hot encoding)
                     loss += loss_fn(class_predictions, class_targets)
                 elif isinstance(loss_fn, nn.BCEWithLogitsLoss):
-                    print("in BCEWithLogitsLoss loss")
                     # BCEWithLogitsLoss expects targets to be of the same shape as predictions
                     loss += loss_fn(marker_predictions.squeeze(1) , marker_targets)
                 elif isinstance(loss_fn, DiceCELoss):
-                    print("in DiceCELoss loss")
                     class_targets_one_hot = F.one_hot(class_targets, num_classes=3).permute(0, 4, 1, 2, 3).float()
                     loss += loss_fn(class_predictions, class_targets_one_hot)
             # Add L1 regularization
@@ -223,6 +219,8 @@ def main():
             save_instance_by_colors(loader=val_loader, model=model, folder="checkpoint/saved_images", device=DEVICE,
                                      three_d=THREE_D, wandb_tracking=WANDB_TRACKING)
 
+            check_accuracy(test_check_accuracy_loader, model, device=DEVICE, three_d=THREE_D)
+
     # check accuracy
     check_accuracy(test_check_accuracy_loader, model, device=DEVICE, three_d=THREE_D)
 
@@ -238,15 +236,18 @@ def main():
 
 
 def t_acc():
-    model = ViT_UNet(in_channels=1, out_channels=3, img_size=(32, 128, 128), patch_size=16, hidden_size=512,
-                     mlp_dim=2048, num_layers=12, num_heads=8, proj_type="conv", dropout_rate=0.,
+    model = ViT_UNet(in_channels=1, out_channels=3, img_size=CROP_SIZE,
+                     patch_size=PATCH_SIZE, hidden_size=HIDDEN_SIZE, mlp_dim=MLP_DIM, num_layers=NUM_LAYERS,
+                     num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE,
                      classification=False, three_d=THREE_D, device=DEVICE).to(DEVICE)
     load_checkpoint(torch.load("checkpoint/vit_checkpoint.pth.tar", map_location=torch.device(DEVICE)), model)
 
-    test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=True,
+    test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, seg_dir=VAL_MASK_DIR, tra_dir=VAL_TRA_DIR, train_aug=False,
+                                            shuffle=False,
                                             batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
                                             pin_memory=PIN_MEMORY, three_d=THREE_D, device=DEVICE)
-    check_accuracy(test_check_accuracy_loader, model, device=DEVICE, one_image=False, three_d=THREE_D)
+    # check_accuracy(test_check_accuracy_loader, model, device=DEVICE, one_image=False, three_d=THREE_D)
+    save_slices(test_check_accuracy_loader, model, device=DEVICE, three_d=THREE_D)
 
 
 # def t_acc_mul_models():

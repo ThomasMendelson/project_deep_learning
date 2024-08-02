@@ -114,22 +114,28 @@ class ViT_UNet(nn.Module):
         self.three_d = three_d
         if self.three_d:
             self.doubleconv = UpBlock3D(1, 32, 16, True)
+
             self.up1 = UpBlock3D(512, 256, 512)
             self.up2 = UpBlock3D(2 * 256, 128, 256)
             self.up3 = UpBlock3D(2 * 128, 64, 128)
             self.up4 = UpBlock3D(2 * 64, 32, 64)
-            self.beforelast = UpBlock3D(2 * 32, 32, 32, True)
-            # self.beforelast = UpBlock3D(32, 32, 32, True)
+
+            self.beforelast_classes = UpBlock3D(2 * 32, 32, 32, True)
+            self.beforelast_marker = UpBlock3D(2 * 32, 32, 32, True)
+
             self.out_classes = nn.Conv3d(32, out_channels, kernel_size=1)
             self.out_marker = nn.Conv3d(32, 1, kernel_size=1)
         else:
             self.doubleconv = UpBlock(1, 32, 16, True)
+
             self.up1 = UpBlock(512, 256, 512)
             self.up2 = UpBlock(2 * 256, 128, 256)
             self.up3 = UpBlock(2 * 128, 64, 128)
             self.up4 = UpBlock(2 * 64, 32, 64)
-            self.beforelast = UpBlock(2 * 32, 32, 32, True)
-            # self.beforelast = UpBlock(32, 32, 32, True)
+
+            self.beforelast_classes = UpBlock(2 * 32, 32, 32, True)
+            self.beforelast_marker = UpBlock(2 * 32, 32, 32, True)
+
             self.out_classes = nn.Conv2d(32, out_channels, kernel_size=1)
             self.out_marker = nn.Conv2d(32, 1, kernel_size=1)
 
@@ -228,9 +234,9 @@ class ViT_UNet(nn.Module):
         x = self.up2(x, skip_connections[0])
         x = self.up3(x, skip_connections[1])
         x = self.up4(x, skip_connections[2])
-        x = self.beforelast(x, skip_connections[3])  # to add back the skip connection from the image chage back lines: 131, 139, 231, 236
-        # x = self.beforelast(x, None)
-        return self.out_classes(x), self.out_marker(x)
+        x_classes = self.beforelast_classes(x, skip_connections[3])
+        x_marker = self.beforelast_marker(x, skip_connections[3])
+        return self.out_classes(x_classes), self.out_marker(x_marker)
 
 
 
