@@ -246,8 +246,12 @@ def t_acc():
                                             shuffle=False,
                                             batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
                                             pin_memory=PIN_MEMORY, three_d=THREE_D, device=DEVICE)
-    # check_accuracy(test_check_accuracy_loader, model, device=DEVICE, one_image=False, three_d=THREE_D)
-    save_slices(test_check_accuracy_loader, model, device=DEVICE, three_d=THREE_D)
+
+    check_accuracy_multy_models(test_check_accuracy_loader, [model], device=DEVICE, one_image=False, three_d=THREE_D)
+
+    check_accuracy(test_check_accuracy_loader, model, device=DEVICE, one_image=False, three_d=THREE_D)
+
+    # save_slices(test_check_accuracy_loader, model, device=DEVICE, three_d=THREE_D)
 
 
 # def t_acc_mul_models():

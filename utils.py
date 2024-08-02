@@ -114,7 +114,8 @@ def check_accuracy(loader, model, device="cuda", one_image=False, three_d=False)
         for data, class_targets, marker_targets in loader:
             class_predictions, marker_predictions = model(data.to(device))
             predicted_classes = predict_classes(class_predictions)
-            marker_predictions = predict_classes(marker_predictions)
+            # marker_predictions = predict_classes(marker_predictions)
+            marker_predictions = (torch.sigmoid(marker_predictions) > 0.5).int().squeeze(1)
 
             gt = class_targets.numpy()
             for i in range(predicted_classes.shape[0]):
@@ -140,12 +141,14 @@ def check_accuracy_multy_models(loader, models, device="cuda", one_image=False, 
     for model in models:
         model.eval()
     with torch.no_grad():
-        for x, y in loader:
-            x = x.to(device)
-            model_preds = [model(x) for model in models]
-            preds = torch.mean(torch.stack(model_preds), dim=0)
+        for data, class_targets, marker_targets in loader:
+            data = data.to(device)
+            # model_preds = [model(data) for model in models]
+            # preds = torch.mean(torch.stack(model_preds), dim=0)
+            preds, model_marker = models[0](data)
+
             predicted_classes = predict_classes(preds).cpu().numpy()  # predict the class 0/1/2
-            gt = y.numpy()
+            gt = class_targets.numpy()
             for i in range(predicted_classes.shape[0]):
                 pred_labels_mask, _ = get_cell_instances(predicted_classes[i], three_d=three_d)
                 accuracy, _ = calc_SEG_measure(pred_labels_mask, gt[i])
@@ -301,7 +304,8 @@ def save_instance_by_colors(loader, model, folder, device="cuda", three_d=False,
         with torch.no_grad():
             class_predictions, marker_predictions = model(data)
             predicted_classes = predict_classes(class_predictions)
-            marker_predictions = predict_classes(marker_predictions)
+            # marker_predictions = predict_classes(marker_predictions)
+            marker_predictions = (torch.sigmoid(marker_predictions) > 0.5).int().squeeze(1)
 
         predicted = inference(predicted_classes[0], marker_predictions[0], three_d=three_d)
         gt = class_targets[0].cpu().numpy().astype(np.uint8)
@@ -432,7 +436,9 @@ def plot_middle_slices_3d_with_gt(pred_labels_mask, gt, num_slices=5):
         axes[1, j].imshow(middle_slices_gt[j], cmap='gray')
         axes[1, j].set_title(f'GT Slice {start_idx + j}')
         axes[1, j].axis('off')
-    plt.tight_layout()
+    print("ploting")
+    plt.savefig(f"{time.time()}.png")
+    plt.close(fig)
     plt.show()
 
 def save_slices(loader, model, device, num_slices=5, three_d=False):
@@ -443,7 +449,7 @@ def save_slices(loader, model, device, num_slices=5, three_d=False):
         for data, class_targets, marker_targets in loader:
             class_predictions, marker_predictions = model(data.to(device))
             predicted_classes = predict_classes(class_predictions)
-            marker_predictions = predict_classes(marker_predictions)
+            marker_predictions = (torch.sigmoid(marker_predictions) > 0.5).int().squeeze(1)
 
             gt = class_targets.numpy()
             for i in range(predicted_classes.shape[0]):
@@ -453,9 +459,10 @@ def save_slices(loader, model, device, num_slices=5, three_d=False):
 
                 pred_labels_mask = predicted_classes[i].cpu().numpy()
                 pred_labels_mask = (pred_labels_mask == 2).astype(np.uint8)
-                print(f"marker_predictions[i].shape: {marker_predictions[i].shape}, gt[i].shape: {gt[i].shape}")
                 plot_middle_slices_3d_with_gt(pred_labels_mask, gt[i], num_slices=5)
                 plot_middle_slices_3d_with_gt(marker_predictions[i].cpu().numpy(), gt[i], num_slices=5)
+
+            break
 
 
 
