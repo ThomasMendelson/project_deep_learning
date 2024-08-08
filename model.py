@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 
 class DoubleConv(nn.Module):
@@ -23,6 +24,7 @@ class UNET(nn.Module):
     ):
         super(UNET, self).__init__()
         self.ups = nn.ModuleList()
+        self.up_marker = nn.ModuleList()
         self.downs = nn.ModuleList()
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
@@ -39,9 +41,12 @@ class UNET(nn.Module):
                 )
             )
             self.ups.append(DoubleConv(feature*2, feature))
+        self.up_marker.append(nn.ConvTranspose2d(features[0] * 2, features[0], kernel_size=2, stride=2, ))
+        self.up_marker.append(DoubleConv(features[0] * 2, features[0]))
 
         self.bottleneck = DoubleConv(features[-1], features[-1]*2)
-        self.final_conv = nn.Conv2d(features[0], out_channels, kernel_size=1)
+        self.out_classes = nn.Conv2d(features[0], out_channels, kernel_size=1)
+        self.out_marker = nn.Conv2d(features[0], 1, kernel_size=1)
 
     def forward(self, x):
         skip_connections = []
@@ -55,24 +60,38 @@ class UNET(nn.Module):
         skip_connections = skip_connections[::-1]
 
         for idx in range(0, len(self.ups), 2):
-            x = self.ups[idx](x)
-            skip_connection = skip_connections[idx//2]
+            if idx == len(self.ups)-2:
+                x_classes, x_markers = self.ups[idx](x), self.up_marker[0](x)
+                skip_connection = skip_connections[idx // 2]
+                if x_classes.shape != skip_connection.shape:
+                    # x_classes = F.interpolate(x_classes, size=skip_connection.shape[2:], mode='trilinear', align_corners=False)
+                    x_classes = TF.resize(x_classes, size=skip_connection.shape[2:])
+                if x_markers.shape != skip_connection.shape:
+                    # x_markers = F.interpolate(x_markers, size=skip_connection.shape[2:], mode='trilinear', align_corners=False)
+                    x_markers = TF.resize(x_markers, size=skip_connection.shape[2:])
 
-            if x.shape != skip_connection.shape:
-                x = TF.resize(x, size=skip_connection.shape[2:])
+                x_classes, x_markers = torch.cat((skip_connection, x_classes), dim=1), torch.cat((skip_connection, x_markers), dim=1)
+                x_classes, x_markers = self.ups[idx + 1](x_classes), self.up_marker[1](x_markers)
 
-            concat_skip = torch.cat((skip_connection, x), dim=1)
-            x = self.ups[idx+1](concat_skip)
+            else:
+                x = self.ups[idx](x)
+                skip_connection = skip_connections[idx//2]
 
-        return self.final_conv(x)
+                if x.shape != skip_connection.shape:
+                    x = TF.resize(x, size=skip_connection.shape[2:])
+
+                concat_skip = torch.cat((skip_connection, x), dim=1)
+                x = self.ups[idx+1](concat_skip)
+
+        return self.out_classes(x_classes), self.out_marker(x_markers)
 
 def t():
-    x = torch.randn((3, 1, 161, 161))
-    model = UNET(in_channels=1, out_channels=1)
-    preds = model(x)
-    print(preds.shape)
-    print(x.shape)
-    assert preds.shape == x.shape
+    x = torch.randn((3, 1, 256, 256))
+    model = UNET(in_channels=1, out_channels=3)
+    class_predictions, marker_predictions = model(x)
+    print(f"class_predictions.shape: {class_predictions.shape}")
+    print(f"marker_predictions.shape: {marker_predictions.shape}")
+    print(f"x.shape: {x.shape}")
 
 if __name__ == "__main__":
     t()

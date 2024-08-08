@@ -2,6 +2,7 @@ import os
 import cv2
 import random
 from PIL import Image
+import tifffile as tiff
 from torch.utils.data import Dataset
 from torchvision import transforms
 import torchvision.transforms.functional as TF
@@ -26,24 +27,17 @@ class Dataset(Dataset):
             img_path = os.path.join(self.image_dir, self.images[index])
             seg_path = os.path.join(self.seg_dir, self.images[index].replace("t", "man_seg", 1))
             tra_path = os.path.join(self.tra_dir, self.images[index].replace("t", "man_track", 1))
-            image = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
-            image = image.astype(np.float32)
+            image = tiff.imread(img_path).astype(np.float32)
             image = (image - image.mean()) / (image.std())
-            seg_mask = cv2.imread(seg_path, cv2.IMREAD_UNCHANGED).astype(np.float32)
-            tra_mask = cv2.imread(seg_path, cv2.IMREAD_UNCHANGED).astype(np.float32)
+
+            seg_mask = tiff.imread(seg_path).astype(np.float32)
+            tra_mask = tiff.imread(tra_path).astype(np.float32)
 
             transform = self.get_transform()
+
             image, seg_mask, tra_mask = transform(image=image, seg_mask=seg_mask, tra_mask=tra_mask)
+
             return image, seg_mask, tra_mask
-        # else:
-        #     img_path = os.path.join(self.image_dir, self.images[index])
-        #     image = np.array(Image.open(img_path).convert("RGB"))
-        #
-        #     if self.transform is not None:
-        #         augmentations = self.transform(image=image)
-        #         image = augmentations["image"]
-        #
-        #     return image
 
     @staticmethod
     def detect_edges(mask, threshold=0.25):
@@ -102,18 +96,24 @@ class Dataset(Dataset):
                 return TF.vflip(image), TF.vflip(seg_mask), TF.vflip(tra_mask)
             return image, seg_mask, tra_mask
 
-        def random_crop(image, seg_mask, tra_mask, crop_size, num_crops=10, threshold=500):
-            # image, mask are PIL
+        def random_crop(image, seg_mask, tra_mask, crop_size, num_crops=8, threshold=500):
+            if not isinstance(image, Image.Image):
+                image = Image.fromarray(image)
+            if not isinstance(seg_mask, Image.Image):
+                seg_mask = Image.fromarray(seg_mask)
+            if not isinstance(tra_mask, Image.Image):
+                tra_mask = Image.fromarray(tra_mask)
+
             count = 0
-            images = np.zeros((num_crops, crop_size, crop_size), dtype=np.float32)
-            seg_masks = np.zeros((num_crops, crop_size, crop_size), dtype=np.float32)
-            tra_masks = np.zeros((num_crops, crop_size, crop_size), dtype=np.float32)
+            images = np.zeros((num_crops, *crop_size), dtype=np.float32)
+            seg_masks = np.zeros((num_crops, *crop_size), dtype=np.float32)
+            tra_masks = np.zeros((num_crops, *crop_size), dtype=np.float32)
             while count < num_crops:
                 i, j, h, w = transforms.RandomCrop.get_params(
-                    image, output_size=(crop_size, crop_size))
+                    image, output_size=(crop_size))
                 cropped_image, cropped_seg_mask, cropped_tra_mask = (TF.crop(image, i, j, h, w),
-                                                                     TF.crop(seg_masks, i, j, h, w),
-                                                                     TF.crop(tra_masks, i, j, h, w))
+                                                                     TF.crop(seg_mask, i, j, h, w),
+                                                                     TF.crop(tra_mask, i, j, h, w))
                 cropped_image, cropped_seg_mask, cropped_tra_mask = np.array(cropped_image), np.array(
                     cropped_seg_mask), np.array(cropped_tra_mask)
                 if np.count_nonzero(cropped_seg_mask) > threshold:
@@ -163,7 +163,8 @@ class Dataset(Dataset):
                 image, seg_mask, tra_mask = random_crop(image, seg_mask, tra_mask, crop_size=self.crop_size)
                 image, seg_mask, tra_mask = to_tensor(np.array(image), np.array(seg_mask), np.array(tra_mask))
                 return image, seg_mask, tra_mask
-            image, seg_mask, tra_mask = val_to_tensor(image, seg_mask, tra_mask)
+            image, seg_mask, tra_mask = random_crop(image, seg_mask, tra_mask, self.crop_size)
+            image, seg_mask, tra_mask = to_tensor(np.array(image), np.array(seg_mask), np.array(tra_mask))
             return image, seg_mask, tra_mask
 
         return transform

@@ -98,22 +98,22 @@ class ViT_UNet(nn.Module):
                  mlp_dim=3072, num_layers=12, num_heads=12, proj_type="conv", dropout_rate=0.,
                  classification=False, three_d=False):
         super(ViT_UNet, self).__init__()
-        self.vit = ViT(
-            in_channels=in_channels,
-            img_size=img_size,
-            patch_size=patch_size,
-            hidden_size=hidden_size,
-            mlp_dim=mlp_dim,
-            num_layers=num_layers,
-            num_heads=num_heads,
-            proj_type=proj_type,
-            dropout_rate=dropout_rate,
-            classification=classification,
-        )
         self.device = device
         self.three_d = three_d
         if self.three_d:
-            self.doubleconv = UpBlock3D(1, 32, 16, True)
+            self.vit = ViT(
+                in_channels=in_channels,
+                img_size=img_size,
+                patch_size=patch_size,
+                hidden_size=hidden_size,
+                mlp_dim=mlp_dim,
+                num_layers=num_layers,
+                num_heads=num_heads,
+                proj_type=proj_type,
+                dropout_rate=dropout_rate,
+                classification=classification,
+            )
+            self.doubleconv = UpBlock3D(in_channels, 32, 16, True)
 
             self.up1 = UpBlock3D(512, 256, 512)
             self.up2 = UpBlock3D(2 * 256, 128, 256)
@@ -126,7 +126,20 @@ class ViT_UNet(nn.Module):
             self.out_classes = nn.Conv3d(32, out_channels, kernel_size=1)
             self.out_marker = nn.Conv3d(32, 1, kernel_size=1)
         else:
-            self.doubleconv = UpBlock(1, 32, 16, True)
+            self.vit = ViT(
+                in_channels=in_channels,
+                img_size=img_size,
+                patch_size=patch_size,
+                hidden_size=hidden_size,
+                mlp_dim=mlp_dim,
+                num_layers=num_layers,
+                num_heads=num_heads,
+                proj_type=proj_type,
+                dropout_rate=dropout_rate,
+                classification=classification,
+                spatial_dims=2,
+            )
+            self.doubleconv = UpBlock(in_channels, 32, 16, True)
 
             self.up1 = UpBlock(512, 256, 512)
             self.up2 = UpBlock(2 * 256, 128, 256)
@@ -219,11 +232,10 @@ class ViT_UNet(nn.Module):
             x, skip_connections = self.vit(x), [self.doubleconv(x, None)]
         else:
             img_size = x.shape[-2:]
-            x, skip_connections = self.vit(x.unsqueeze(0)), [self.doubleconv(x, None)]
+            x, skip_connections = self.vit(x), [self.doubleconv(x, None)]
 
         if isinstance(x, tuple):
             x, hidden_states_out = x
-
         x = self.reconstruct_image_from_patches(patches=x.unsqueeze(0), img_size=img_size, patch_size=16).squeeze(0)
         hidden_states_out = torch.stack(hidden_states_out, dim=0)
         skip_connections = self.create_skip_connection(hidden_state=hidden_states_out, img_size=img_size,
@@ -246,13 +258,27 @@ class ViT_UNet(nn.Module):
 if __name__ == "__main__":
     from torchinfo import summary
 
-    DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+    DEVICE = "cuda:1" if torch.cuda.is_available() else "cpu"
 
-    input_tensor2d = torch.rand((1, 1, 256, 256)).to(DEVICE)
-    model2D = ViT_UNet(in_channels=1, out_channels=3, img_size=(1, 256, 256), patch_size=(1, 16, 16), hidden_size=512,
-                       mlp_dim=2048, num_layers=12, num_heads=8, proj_type="conv", dropout_rate=0.,
-                       classification=False, three_d=False, device=DEVICE).to(DEVICE)
+    input_tensor2d = torch.rand((64, 1, 256, 256)).to(DEVICE)
+    # model2D = ViT_UNet(in_channels=1, out_channels=3, img_size=(256, 256), patch_size=16, hidden_size=512,
+    #                    mlp_dim=2048, num_layers=12, num_heads=8, proj_type="conv", dropout_rate=0.,
+    #                    classification=False, three_d=False, device=DEVICE).to(DEVICE)
 
+    input_tensor2d = torch.rand((64, 1, 256, 256)).to(DEVICE)
+    model2D = ViT(
+        in_channels=1,
+        img_size=(256, 256),
+        patch_size=16,
+        hidden_size=512,
+        mlp_dim=2048,
+        num_layers=12,
+        num_heads=8,
+        proj_type="conv",
+        dropout_rate=0.,
+        classification=False,
+        spatial_dims=2,
+    ).to(DEVICE)
     # Input tensor (batch size of 2, 1 channel, 16x128x128 image)
 
     # Forward pass
@@ -272,24 +298,24 @@ if __name__ == "__main__":
     print(summary(model2D, depth=3, input_size=(1, 1, 256, 256), col_names=["input_size", "output_size", "num_params"],
                   device=DEVICE))
 
-    model3D = ViT_UNet(in_channels=1, out_channels=3, img_size=(32, 128, 128), patch_size=16, hidden_size=512,
-                       mlp_dim=2048, num_layers=12, num_heads=8, proj_type="conv", dropout_rate=0.,
-                       classification=False, three_d=True, device=DEVICE).to(DEVICE)
-
-    input_tensor3d = torch.rand((1, 1, 32, 128, 128)).to(DEVICE)
-    # Forward pass
-    output3D = model3D(input_tensor3d)
-
-    # Check if output is a tuple and handle accordingly
-    if isinstance(output3D, tuple):
-        main_output3D, hidden_states_out = output3D
-    else:
-        main_output3D = output3D
-        hidden_states_out = None
-
-    # Print the shape of the main output
-    print(main_output3D.shape)  # Output shape will be (batch_size, num_patches, hidden_size)
-
-    print("Summary for model3D:")
-    print(summary(model3D, depth=3, input_size=(1, 1, 32, 128, 128),
-                  col_names=["input_size", "output_size", "num_params"], device=DEVICE))
+    # model3D = ViT_UNet(in_channels=1, out_channels=3, img_size=(32, 128, 128), patch_size=16, hidden_size=512,
+    #                    mlp_dim=2048, num_layers=12, num_heads=8, proj_type="conv", dropout_rate=0.,
+    #                    classification=False, three_d=True, device=DEVICE).to(DEVICE)
+    #
+    # input_tensor3d = torch.rand((1, 1, 32, 128, 128)).to(DEVICE)
+    # # Forward pass
+    # output3D = model3D(input_tensor3d)
+    #
+    # # Check if output is a tuple and handle accordingly
+    # if isinstance(output3D, tuple):
+    #     main_output3D, hidden_states_out = output3D
+    # else:
+    #     main_output3D = output3D
+    #     hidden_states_out = None
+    #
+    # # Print the shape of the main output
+    # print(main_output3D.shape)  # Output shape will be (batch_size, num_patches, hidden_size)
+    #
+    # print("Summary for model3D:")
+    # print(summary(model3D, depth=3, input_size=(1, 1, 32, 128, 128),
+    #               col_names=["input_size", "output_size", "num_params"], device=DEVICE))

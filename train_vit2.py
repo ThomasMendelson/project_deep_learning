@@ -19,15 +19,17 @@ from utils import (
     check_accuracy_multy_models,
     # save_predictions_as_imgs,
     save_instance_by_colors,
+    three_d_to_two_d_represantation,
+    two_d_to_three_d_represantation,
     save_slices,
 )
 
 # Hyperparameters
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-3
 L1_LAMBDA = 1e-5
-DEVICE = "cuda:1" if torch.cuda.is_available() else "cpu"
-BATCH_SIZE = 8
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+BATCH_SIZE = 1
 NUM_EPOCHS = 100
 NUM_WORKERS = 4
 CLASS_WEIGHTS = [0.15, 0.6, 0.25]  # [0.1, 0.6, 0.3] [0.1, 0.7, 0.2]
@@ -42,19 +44,27 @@ DROPOUT_RATE = 0.2
 
 PIN_MEMORY = False
 LOAD_MODEL = False
-WANDB_TRACKING = False
+WANDB_TRACKING = True
 
-CROP_SIZE = (32, 128, 128)
+CROP_SIZE = (32, 256, 256) #(32, 128, 128)  # (32, 256, 256)
 # CROP_SIZE = (256, 256)
 THREE_D = True
+THREE_D_BY_TWO_D = True
 if THREE_D:
     # 3D
-    TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02"
-    TRAIN_SEG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/SEG"
-    TRAIN_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/TRA2"
-    VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01"
-    VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG"
-    VAL_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/TRA2"
+    # TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02"
+    # TRAIN_SEG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/SEG"
+    # TRAIN_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/TRA2"
+    # VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01"
+    # VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG"
+    # VAL_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/TRA2"
+
+    TRAIN_IMG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/02"
+    TRAIN_SEG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/02_GT/SEG"
+    TRAIN_TRA_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/02_GT/TRA2"
+    VAL_IMG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/01"
+    VAL_MASK_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+01_GT//SEG"
+    VAL_TRA_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+01_GT//TRA2"
 else:
     # 2D
     TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02"
@@ -63,6 +73,7 @@ else:
     VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/01"
     VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/01_GT/SEG"
     VAL_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/01_GT/TRA2"
+
 
 
 def calculate_l1_loss(model):
@@ -77,14 +88,21 @@ def train_fn(loader, model, optimizer, loss_functions, scaler):
 
     for batch_idx, (data, class_targets, marker_targets) in enumerate(loop):
         loss = 0
-        data = data.to(device=DEVICE)
+
         if THREE_D:
             class_targets = Dataset3D.split_mask(class_targets.to(device=DEVICE)).long()
+            if THREE_D_BY_TWO_D:
+                data = three_d_to_two_d_represantation(images=data.to(device=DEVICE))
         else:
             class_targets = Dataset.split_mask(class_targets.to(device=DEVICE)).long()
+        data = data.to(device=DEVICE)
         marker_targets[marker_targets > 0] = 1
-        marker_targets = marker_targets.to(device=DEVICE)
 
+        if THREE_D_BY_TWO_D:
+            marker_targets = marker_targets.view(BATCH_SIZE *CROP_SIZE[0], CROP_SIZE[1], CROP_SIZE[2])
+            class_targets = class_targets.view(BATCH_SIZE *CROP_SIZE[0], CROP_SIZE[1], CROP_SIZE[2])
+        marker_targets = marker_targets.to(device=DEVICE)
+        class_targets = class_targets.to(device=DEVICE)
         # forward
         with torch.cuda.amp.autocast():
             class_predictions, marker_predictions = model(data)
@@ -96,7 +114,7 @@ def train_fn(loader, model, optimizer, loss_functions, scaler):
                     # BCEWithLogitsLoss expects targets to be of the same shape as predictions
                     loss += loss_fn(marker_predictions.squeeze(1), marker_targets)
                 elif isinstance(loss_fn, DiceCELoss):
-                    if THREE_D:
+                    if THREE_D and (not THREE_D_BY_TWO_D):
                         class_targets_one_hot = F.one_hot(class_targets, num_classes=3).permute(0, 4, 1, 2, 3).float()
                     else:
                         class_targets_one_hot = F.one_hot(class_targets, num_classes=3).permute(0, 3, 1, 2).float()
@@ -126,13 +144,20 @@ def evaluate_fn(loader, model, loss_functions):
     with torch.no_grad():
         for data, class_targets, marker_targets in loop:
             loss = 0
-            data = data.to(device=DEVICE)
             if THREE_D:
                 class_targets = Dataset3D.split_mask(class_targets.to(device=DEVICE)).long()
+                if THREE_D_BY_TWO_D:
+                    data = three_d_to_two_d_represantation(images=data.to(device=DEVICE))
             else:
                 class_targets = Dataset.split_mask(class_targets.to(device=DEVICE)).long()
+            data = data.to(device=DEVICE)
             marker_targets[marker_targets > 0] = 1
+
+            if THREE_D_BY_TWO_D:
+                marker_targets = marker_targets.view(BATCH_SIZE * CROP_SIZE[0], CROP_SIZE[1], CROP_SIZE[2])
+                class_targets = class_targets.view(BATCH_SIZE * CROP_SIZE[0], CROP_SIZE[1], CROP_SIZE[2])
             marker_targets = marker_targets.to(device=DEVICE)
+            class_targets = class_targets.to(device=DEVICE)
 
             class_predictions, marker_predictions = model(data)
 
@@ -144,7 +169,7 @@ def evaluate_fn(loader, model, loss_functions):
                     loss += loss_fn(marker_predictions.squeeze(1), marker_targets)
 
                 elif isinstance(loss_fn, DiceCELoss):
-                    if THREE_D:
+                    if THREE_D and (not THREE_D_BY_TWO_D):
                         class_targets_one_hot = F.one_hot(class_targets, num_classes=3).permute(0, 4, 1, 2, 3).float()
                     else:
                         class_targets_one_hot = F.one_hot(class_targets, num_classes=3).permute(0, 3, 1, 2).float()
@@ -182,11 +207,27 @@ def main():
                        "dropout_rate": DROPOUT_RATE,
                    })
         wandb_step = 0
+    if THREE_D:
+        if THREE_D_BY_TWO_D:
+            # 3D by 2D slices
+            model = ViT_UNet(in_channels=3, out_channels=3, img_size=CROP_SIZE[-2:],
+                             patch_size=PATCH_SIZE, hidden_size=HIDDEN_SIZE, mlp_dim=MLP_DIM, num_layers=NUM_LAYERS,
+                             num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE,
+                             classification=False, three_d=(THREE_D and (not THREE_D_BY_TWO_D)), device=DEVICE).to(DEVICE)
+        else:
+            # 3D
+            model = ViT_UNet(in_channels=1, out_channels=3, img_size=CROP_SIZE,
+                             patch_size=PATCH_SIZE, hidden_size=HIDDEN_SIZE, mlp_dim=MLP_DIM, num_layers=NUM_LAYERS,
+                             num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE,
+                             classification=False, three_d=THREE_D, device=DEVICE).to(DEVICE)
 
-    model = ViT_UNet(in_channels=1, out_channels=3, img_size=CROP_SIZE,
-                     patch_size=PATCH_SIZE, hidden_size=HIDDEN_SIZE, mlp_dim=MLP_DIM, num_layers=NUM_LAYERS,
-                     num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE,
-                     classification=False, three_d=THREE_D, device=DEVICE).to(DEVICE)
+    else:
+        # 2D
+        model = ViT_UNet(in_channels=1, out_channels=3, img_size=CROP_SIZE,
+                         patch_size=PATCH_SIZE, hidden_size=HIDDEN_SIZE, mlp_dim=MLP_DIM, num_layers=NUM_LAYERS,
+                         num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE,
+                         classification=False, three_d=THREE_D, device=DEVICE).to(DEVICE)
+
 
     class_weights = torch.FloatTensor(CLASS_WEIGHTS).to(DEVICE)
     # criterion = [nn.CrossEntropyLoss(weight=class_weights), nn.BCEWithLogitsLoss()]
@@ -213,7 +254,7 @@ def main():
     if LOAD_MODEL:
         load_checkpoint(torch.load("checkpoint/vit_checkpoint.pth.tar", map_location=torch.device(DEVICE)), model)
         model.to(DEVICE)
-        check_accuracy(val_loader, model, device=DEVICE, three_d=THREE_D)
+        check_accuracy(val_loader, model, device=DEVICE, three_d=THREE_D, three_d_by_two_d=THREE_D_BY_TWO_D)
 
     scaler = torch.cuda.amp.GradScaler()
 
@@ -238,18 +279,21 @@ def main():
             save_checkpoint(checkpoint, filename="checkpoint/vit_checkpoint2.pth.tar")
 
             save_instance_by_colors(loader=val_loader, model=model, folder="checkpoint/saved_images2", device=DEVICE,
-                                    three_d=THREE_D, wandb_tracking=WANDB_TRACKING, wandb_step=wandb_step)
+                                    three_d=THREE_D, wandb_tracking=WANDB_TRACKING, wandb_step=wandb_step,
+                                    three_d_by_two_d=THREE_D_BY_TWO_D)
             if (epoch + 1) != NUM_EPOCHS:
-                check_accuracy(test_check_accuracy_loader, model, num_image=50, device=DEVICE, three_d=THREE_D)
+                check_accuracy(test_check_accuracy_loader, model, num_image=50, device=DEVICE, three_d=THREE_D,
+                               three_d_by_two_d=THREE_D_BY_TWO_D)
 
         if WANDB_TRACKING:
             wandb_step += 1
 
-    check_accuracy(test_check_accuracy_loader, model, device=DEVICE, three_d=THREE_D)
+    check_accuracy(test_check_accuracy_loader, model, device=DEVICE, three_d=THREE_D, three_d_by_two_d=THREE_D_BY_TWO_D)
     if NUM_EPOCHS % 10 != 0:
         # save instance image
         save_instance_by_colors(loader=test_check_accuracy_loader, model=model, folder="checkpoint", three_d=THREE_D,
-                                device=DEVICE, wandb_tracking=WANDB_TRACKING, wandb_step=wandb_step)
+                                device=DEVICE, wandb_tracking=WANDB_TRACKING, wandb_step=wandb_step,
+                                three_d_by_two_d=THREE_D_BY_TWO_D)
 
     if WANDB_TRACKING:
         # torch.onnx.export(model, torch.randn(1, 1, CROP_SIZE, device=DEVICE), "model.onnx")
@@ -259,17 +303,17 @@ def main():
 
 
 def t_acc():
-    model = ViT_UNet(in_channels=1, out_channels=3, img_size=CROP_SIZE,
+    model = ViT_UNet(in_channels=3, out_channels=3, img_size=CROP_SIZE[-2:],
                      patch_size=PATCH_SIZE, hidden_size=HIDDEN_SIZE, mlp_dim=MLP_DIM, num_layers=NUM_LAYERS,
                      num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE,
-                     classification=False, three_d=THREE_D, device=DEVICE).to(DEVICE)
-    load_checkpoint(torch.load("checkpoint/vit_checkpoint.pth.tar", map_location=torch.device(DEVICE)), model)
+                     classification=False, three_d=(THREE_D and (not THREE_D_BY_TWO_D)), device=DEVICE).to(DEVICE)
+    load_checkpoint(torch.load("checkpoint/vit_checkpoint2.pth.tar", map_location=torch.device(DEVICE)), model)
 
     test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, seg_dir=VAL_MASK_DIR, tra_dir=VAL_TRA_DIR, train_aug=False,
                                             shuffle=False, batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
                                             pin_memory=PIN_MEMORY, three_d=THREE_D, device=DEVICE)
 
-    check_accuracy_multy_models(test_check_accuracy_loader, [model], device=DEVICE, one_image=False, three_d=THREE_D)
+    # check_accuracy_multy_models(test_check_accuracy_loader, [model], device=DEVICE, three_d=THREE_D)
 
     check_accuracy(test_check_accuracy_loader, model, device=DEVICE, num_image=None, three_d=THREE_D)
 

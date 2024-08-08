@@ -443,8 +443,158 @@ def t_inference():
 
     # print("result2", labeled_preds_tree)
 
+
+import os
+from PIL import Image
+import numpy as np
+from scipy.ndimage import label, binary_erosion
+
+def save_shrink_images_to_new_dir():
+    # Define the source and target directories
+    source_dir = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02_GT/TRA"
+    target_dir = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02_GT/TRA2"
+
+    # Create the target directory if it doesn't exist
+    os.makedirs(target_dir, exist_ok=True)
+
+
+    #
+    def process_image(image, num_layers_to_shrink, three_d):
+        """
+           Shrinks each cell in a 3D image by num_layers_to_shrink voxel layers without changing the overall image size.
+
+           Parameters:
+           - tensor_3d (torch.Tensor): A 3D tensor containing cell labels.
+
+           Returns:
+           - torch.Tensor: A 3D tensor with each cell shrunk by num_layers_to_shrink voxel layers.
+           """
+        if three_d:
+            strel = np.ones((3, 3, 3))
+        else:
+            strel = np.ones((3, 3))
+
+        # Create an empty array to store the shrunk cells
+        shrunk_array = np.zeros_like(image)
+
+        # Get unique cell values (excluding background, assumed to be 0)
+        cell_values = np.unique(image)
+        cell_values = cell_values[cell_values != 0]
+
+        # Perform erosion on each cell separately
+        for value in cell_values:
+            cell_mask = (image == value)
+            eroded_mask = binary_erosion(cell_mask, structure=strel, iterations=num_layers_to_shrink)
+            shrunk_array[eroded_mask] = value
+
+        print(f"shrunk_array.shape: {shrunk_array.shape}")
+        return shrunk_array
+
+
+    # Loop through all files in the source directory
+    for filename in os.listdir(source_dir):
+        # Construct the full file path
+        file_path = os.path.join(source_dir, filename)
+
+        # Check if the file is an image (optional: based on file extension)
+        if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.tif', '.bmp')):
+            # Open the image
+            image = tiff.imread(file_path)
+
+            # Process the image
+            processed_image = process_image(image, 5, False)
+
+            # Save the processed image to the target directory with the same name
+            target_path = os.path.join(target_dir, filename)
+            tiff.imwrite(target_path, processed_image)
+
+    print("Processing complete.")
+
+
+def t_save_shrink_images_to_new_dir(three_d):
+    source_dir = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02_GT/TRA/man_track050.tif"
+    target_dir = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02_GT/TRA2/man_track050.tif"
+
+    # Load images
+    print("Loading source image...")
+    ory_image = tiff.imread(source_dir)
+    print("Loading target image...")
+    trg_image = tiff.imread(target_dir)
+    print(f"trg_image.shape: {trg_image.shape}\nory_image.shape: {ory_image.shape}")
+    # Compute middle slice and difference
+    if three_d:
+        mid_slice = ory_image.shape[0] // 2
+        dif = ory_image[mid_slice] - trg_image[mid_slice]
+    else:
+        dif = ory_image - trg_image
+    print("Computed difference of middle slice.")
+
+    # Plot and save the difference image
+    plt.imshow(dif, cmap='gray')  # Use 'gray' colormap for grayscale images
+    plt.axis('off')  # Turn off axis labels
+    output_path = 'dif.png'
+    plt.savefig(output_path)  # Save the plot as an image file
+    plt.close()  # Close the figure to release memory
+    print(f"Image saved to {output_path}.")
+
+def three_d_to_two_d_represantation(images):
+    """
+    Args:
+    - image: 5D tensor of shape (batch_size, channel, depth, height, width)
+
+    Returns:
+    - A 4D tensor of shape (batch_size * depth, 3, height, width) containing the slices
+    """
+    batch_size, channel, depth, height, width = images.shape
+
+    expanded_images = torch.cat([images[:, :, 0:1, :, :], images, images[:, :, -1:, :, :]], dim=2)
+    slices = torch.zeros((batch_size, depth, 3, height, width), dtype=images.dtype)
+
+    slices[:, :, 0] = expanded_images[:, :, 0:depth]
+    slices[:, :, 1] = expanded_images[:, :, 1:depth + 1]
+    slices[:, :, 2] = expanded_images[:, :, 2:depth + 2]
+
+    slices = slices.view(batch_size * depth, 3, height, width)
+    return slices
+
+
+def two_d_to_three_d_represantation(images, batch_size, depth):
+    """
+        Args:
+        - images: 4D tensor of shape (batch_size * depth, channel, height, width) containing the slices
+        - batch_size: The original batch size
+        - depth: The original depth size
+
+        Returns:
+        - 5D tensor of shape (batch_size, channel, depth, height, width)
+        """
+    batch_size_depth, channel, height, width = images.shape
+    assert batch_size * depth == batch_size_depth, "The input images shape does not match the provided batch_size and depth."
+    reshaped_images = images.view(batch_size, depth, channel, height, width)
+
+    return reshaped_images.permute(0, 2, 1, 3, 4)
+
+def t_2_to_3_and_back():
+    target_dir = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/TRA2/man_track050.tif"
+    original_image = torch.from_numpy(tiff.imread(target_dir).astype(np.float32)).unsqueeze(0).unsqueeze(0)
+    print(f"original image.shape: {original_image.shape}")
+    image = three_d_to_two_d_represantation(original_image)
+    print(f"after 3D->2D image.shape: {image.shape}")
+    image = image[:, 1:2, :, :]
+    print(f"after extract the midlle slice image.shape: {image.shape}")
+    image = two_d_to_three_d_represantation(image, 1, original_image.shape[2])
+    print(f"after 2D->3D image.shape: {image.shape}")
+    if torch.allclose(image, original_image):
+        print("The reconstructed image is approximately the same as the original image.")
+    else:
+        print("The reconstructed image does not match the original image.")
+
 if __name__ == "__main__":
-    t_inference()
+    # save_shrink_images_to_new_dir()
+    # t_save_shrink_images_to_new_dir(False)
+#     t_inference()
+    t_2_to_3_and_back()
+
 
 
 

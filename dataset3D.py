@@ -34,7 +34,6 @@ class Dataset3D(Dataset):
 
             transform = self.get_transform()
             image, seg_mask, tra_mask = transform(image=image, seg_mask=seg_mask, tra_mask=tra_mask)
-
             return image, seg_mask, tra_mask
 
     @staticmethod
@@ -172,6 +171,7 @@ class Dataset3D(Dataset):
             return image, seg_mask.squeeze(0), tra_mask.squeeze(0)
 
         return transform
+
 
 
 def get_transform(train_aug):

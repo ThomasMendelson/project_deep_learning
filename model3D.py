@@ -27,6 +27,7 @@ class UNET3D(nn.Module):
 
         super(UNET3D, self).__init__()
         self.ups = nn.ModuleList()
+        self.up_marker = nn.ModuleList()
         self.downs = nn.ModuleList()
         self.pool = nn.MaxPool3d(kernel_size=2, stride=2)
 
@@ -43,9 +44,12 @@ class UNET3D(nn.Module):
                 )
             )
             self.ups.append(DoubleConv3D(feature*2, feature))
+        self.up_marker.append(nn.ConvTranspose3d(features[0]*2, features[0], kernel_size=2, stride=2,))
+        self.up_marker.append(DoubleConv3D(features[0] * 2, features[0]))
 
         self.bottleneck = DoubleConv3D(features[-1], features[-1]*2)
-        self.final_conv = nn.Conv3d(features[0], out_channels, kernel_size=1)
+        self.out_classes = nn.Conv3d(features[0], out_channels, kernel_size=1)
+        self.out_marker = nn.Conv3d(features[0], 1, kernel_size=1)
 
     def forward(self, x):
         skip_connections = []
@@ -59,27 +63,39 @@ class UNET3D(nn.Module):
         skip_connections = skip_connections[::-1]
 
         for idx in range(0, len(self.ups), 2):
-            x = self.ups[idx](x)
-            skip_connection = skip_connections[idx//2]
+            if idx == len(self.ups)-2:
+                x_classes, x_markers = self.ups[idx](x), self.up_marker[0](x)
+                skip_connection = skip_connections[idx // 2]
+                if x_classes.shape != skip_connection.shape:
+                    x_classes = F.interpolate(x_classes, size=skip_connection.shape[2:], mode='trilinear', align_corners=False)
+                if x_markers.shape != skip_connection.shape:
+                    x_markers = F.interpolate(x_markers, size=skip_connection.shape[2:], mode='trilinear', align_corners=False)
 
-            if x.shape != skip_connection.shape:
-                x = F.interpolate(x, size=skip_connection.shape[2:], mode='trilinear', align_corners=False)
+                x_classes, x_markers = torch.cat((skip_connection, x_classes), dim=1), torch.cat((skip_connection, x_markers), dim=1)
+                x_classes, x_markers = self.ups[idx + 1](x_classes), self.up_marker[1](x_markers)
 
-            concat_skip = torch.cat((skip_connection, x), dim=1)
-            x = self.ups[idx+1](concat_skip)
+            else:
+                x = self.ups[idx](x)
+                skip_connection = skip_connections[idx//2]
 
-        return self.final_conv(x)
+                if x.shape != skip_connection.shape:
+                    x = F.interpolate(x, size=skip_connection.shape[2:], mode='trilinear', align_corners=False)
+
+                concat_skip = torch.cat((skip_connection, x), dim=1)
+                x = self.ups[idx+1](concat_skip)
+
+        return self.out_classes(x_classes), self.out_marker(x_markers)
 
 
 def t():
-    DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
-    # x = torch.randn((16, 1, 16,  256, 256))
-    model = UNET3D(in_channels=1, out_channels=3).to(DEVICE)
-    # preds = model(x)
-    # print(preds.shape)
-    # print(x.shape)
-    # assert preds.shape == x.shape
-    summary(model, input_size=(16, 1, 16,  256, 256))
+    DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
+    x = torch.randn((16, 1, 16,  256, 256))#.to(DEVICE)
+    model = UNET3D(in_channels=1, out_channels=3)#.to(DEVICE)
+    class_predictions, marker_predictions = model(x)
+    print(f"class_predictions.shape: {class_predictions.shape}")
+    print(f"marker_predictions.shape: {marker_predictions.shape}")
+    print(f"x.shape: {x.shape}")
+    # summary(model, input_size=(16, 1, 16,  256, 256))
 
 if __name__ == "__main__":
     from torchinfo import summary

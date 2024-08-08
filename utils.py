@@ -7,7 +7,7 @@ import time
 import torchvision
 from PIL import Image
 import numpy as np
-from scipy import ndimage
+from scipy.ndimage import label, binary_erosion
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import torch.nn.functional as F
@@ -40,13 +40,14 @@ def load_checkpoint(checkpoint, model):
 
 
 def custom_collate_fn(batch):
-    # batch is a list of tuples (images, masks)
+    # batch is a list of tuples (images, seg_masks, tra_masks)
     # images and masks are of shape (in_batch, C, H, W)
 
     images = torch.cat([item[0] for item in batch], dim=0)  # Concatenate along the first dimension
-    masks = torch.cat([item[1] for item in batch], dim=0)  # Concatenate along the first dimension
+    seg_masks = torch.cat([item[1] for item in batch], dim=0)  # Concatenate along the first dimension
+    tra_masks = torch.cat([item[2] for item in batch], dim=0)  # Concatenate along the first dimension
 
-    return images, masks
+    return images, seg_masks, tra_masks
 
 
 def get_loader(dir, seg_dir, tra_dir, train_aug, shuffle, batch_size, crop_size,
@@ -100,11 +101,11 @@ def get_cell_instances(input_np, marker=False,  three_d=False):
         foreground_mask = input_np
     else:
         foreground_mask = (input_np == 2).astype(np.uint8)
-    labeled, max_num = ndimage.label(foreground_mask, structure=strel)
+    labeled, max_num = label(foreground_mask, structure=strel)
     return labeled, max_num
 
 
-def check_accuracy(loader, model, device="cuda", one_image=False, three_d=False):
+def check_accuracy(loader, model, device="cuda", num_image=None, three_d=False, three_d_by_two_d=False):
     print("=> Checking accuracy")
     loader = tqdm(loader)
     seg = 0
@@ -112,28 +113,39 @@ def check_accuracy(loader, model, device="cuda", one_image=False, three_d=False)
     model.eval()
     with torch.no_grad():
         for data, class_targets, marker_targets in loader:
+            if three_d and three_d_by_two_d:
+                depth = data.shape[-3]
+                batch_size = data.shape[0]
+                data = three_d_to_two_d_represantation(data)
             class_predictions, marker_predictions = model(data.to(device))
+            if three_d and three_d_by_two_d:
+                class_predictions = two_d_to_three_d_represantation(images=class_predictions,
+                                                                              batch_size=batch_size, depth=depth)
+                marker_predictions = two_d_to_three_d_represantation(images=marker_predictions,
+                                                                               batch_size=batch_size,
+                                                                               depth=depth)
             predicted_classes = predict_classes(class_predictions)
             # marker_predictions = predict_classes(marker_predictions)
             marker_predictions = (torch.sigmoid(marker_predictions) > 0.5).int().squeeze(1)
 
             gt = class_targets.numpy()
             for i in range(predicted_classes.shape[0]):
-                pred_labels_mask = inference(predicted_classes[i], marker_predictions[i], three_d=three_d)
-                accuracy, _ = calc_SEG_measure(pred_labels_mask, gt[i])
-                if accuracy != -1:
-                    seg += accuracy
-                    num_iters += 1
-                if one_image and num_iters == 1:
-                    print(f"seg score for one image: {seg / num_iters}")
-                    model.train()
-                    return
+                if torch.any(class_predictions > 0):
+                    pred_labels_mask = inference(predicted_classes[i], marker_predictions[i], three_d=three_d)
+                    accuracy, _ = calc_SEG_measure(pred_labels_mask, gt[i])
+                    if accuracy != -1:
+                        seg += accuracy
+                        num_iters += 1
+                    if num_image is not None and num_iters == num_image:
+                        print(f"seg score for {num_image} image: {seg / num_iters}")
+                        model.train()
+                        return
 
     print(f"seg score: {seg / num_iters}")
     model.train()
 
 
-def check_accuracy_multy_models(loader, models, device="cuda", one_image=False, three_d=False):
+def check_accuracy_multy_models(loader, models, device="cuda", num_image=False, three_d=False):
     print("=> Checking accuracy")
     loader = tqdm(loader)
     seg = 0
@@ -145,7 +157,7 @@ def check_accuracy_multy_models(loader, models, device="cuda", one_image=False, 
             data = data.to(device)
             # model_preds = [model(data) for model in models]
             # preds = torch.mean(torch.stack(model_preds), dim=0)
-            preds, model_marker = models[0](data)
+            preds, _ = models[0](data)
 
             predicted_classes = predict_classes(preds).cpu().numpy()  # predict the class 0/1/2
             gt = class_targets.numpy()
@@ -156,13 +168,13 @@ def check_accuracy_multy_models(loader, models, device="cuda", one_image=False, 
                     seg += accuracy
                     num_iters += 1
 
-                if one_image and num_iters == 1:
-                    print(f"seg score for avg models and one image: {seg / num_iters}")
+                if num_image is not None and num_iters == num_image:
+                    print(f"seg score for {num_image} image: {seg / num_iters}")
                     for model in models:
                         model.train()
                     return
 
-    print(f"seg score for avg models : {seg / num_iters}")
+    print(f"seg score: {seg / num_iters}")
     for model in models:
         model.train()
 
@@ -212,97 +224,106 @@ def get_instance_color(image):
     return colored_image
 
 
-def save_predictions_as_imgs(loader, model, folder, device="cuda", three_d=False, wandb_tracking=False):
-    print("=> saving images")
-    model.eval()
-    for idx, (x, y) in enumerate(loader):
-        x = x.to(device=device, dtype=torch.float32)
-        y = y.to(device=device)
-        with torch.no_grad():
-            preds = model(x)
-            predicted_classes = predict_classes(preds)
-
-        for i in range(predicted_classes.shape[0]):  # Loop through the batch
-            if three_d and idx == 0:
-                visualize_3d_image_from_classes(image=predicted_classes[i], save_path=f"{folder}/pred_{idx}_{i}.html",
-                                                wandb_tracking=wandb_tracking)
-                visualize_3d_image_from_classes(image=y[i], save_path=f"{folder}/gt_{idx}_{i}.html",
-                                                wandb_tracking=wandb_tracking)
-                # pred_img = colored_preds[i].permute(1, 2, 3, 0).cpu().numpy()
-                # gt_img = colored_gt[i].permute(1, 2, 3, 0).cpu().numpy()
-                # middle_slice = pred_img.shape[0]//2
-                # pred_img = pred_img[middle_slice]
-                # gt_img = gt_img[middle_slice]
-
-            else:
-                colored_preds = apply_color_map(predicted_classes, three_d=three_d).type(torch.uint8)
-                colored_gt = apply_color_map(Dataset.split_mask(y).long(), three_d=three_d).type(torch.uint8)
-
-                pred_img = colored_preds[i].permute(1, 2, 0).cpu().numpy()
-                gt_img = colored_gt[i].permute(1, 2, 0).cpu().numpy()
-                separator_line = np.ones((pred_img.shape[0], 5, 3), dtype=np.uint8) * 255  # Red line
-                concatenated_img = np.concatenate([pred_img, separator_line, gt_img], axis=1)
-
-                # Convert to PIL Image
-                concatenated_img_pil = Image.fromarray(concatenated_img)
-
-                # Save the concatenated image
-                concatenated_img_pil.save(f"{folder}/pred_gt_{idx}_{i}.png")
-
-        if three_d:
-            break
-
-    model.train()
-
-
-def visualize_3d_image_from_classes(image, save_path, wandb_tracking=False):
-    # if on GPU
-    image_np = image.cpu().numpy()
-
-    x, y, z = np.indices(image_np.shape)
-    x, y, z = x[image_np > 0], y[image_np > 0], z[image_np > 0]  # Get indices where the voxel value is not zero
-    values = image_np[image_np > 0]  # Get voxel values that are not zero
-
-    colors = np.where(values == 1, 'green', 'red')
-
-    # Create 3D scatter plot
-    fig = go.Figure(data=[
-        go.Scatter3d(
-            x=x.flatten(),
-            y=y.flatten(),
-            z=z.flatten(),
-            mode='markers',
-            marker=dict(
-                size=5,
-                color=colors,  # Color by voxel value
-                opacity=0.2
-            )
-        )
-    ])
-
-    # Update layout for better visualization
-    fig.update_layout(scene=dict(
-        xaxis=dict(nticks=4, range=[0, image_np.shape[0]]),
-        yaxis=dict(nticks=4, range=[0, image_np.shape[1]]),
-        zaxis=dict(nticks=4, range=[0, image_np.shape[2]]),
-        aspectratio=dict(x=1, y=1, z=1)
-    ))
-    # Save the figure to a temporary file
-    fig.write_html(save_path)
-    if wandb_tracking:
-        table = wandb.Table(columns=["plotly_figure"])
-        table.add_data(wandb.Html(save_path))
-        # Log the image to wandb
-        wandb.log({os.path.basename(save_path): table})
+# def save_predictions_as_imgs(loader, model, folder, device="cuda", three_d=False, wandb_tracking=False):
+#     print("=> saving images")
+#     model.eval()
+#     for idx, (x, y) in enumerate(loader):
+#         x = x.to(device=device, dtype=torch.float32)
+#         y = y.to(device=device)
+#         with torch.no_grad():
+#             preds = model(x)
+#             predicted_classes = predict_classes(preds)
+#
+#         for i in range(predicted_classes.shape[0]):  # Loop through the batch
+#             if three_d and idx == 0:
+#                 visualize_3d_image_from_classes(image=predicted_classes[i], save_path=f"{folder}/pred_{idx}_{i}.html",
+#                                                 wandb_tracking=wandb_tracking)
+#                 visualize_3d_image_from_classes(image=y[i], save_path=f"{folder}/gt_{idx}_{i}.html",
+#                                                 wandb_tracking=wandb_tracking)
+#                 # pred_img = colored_preds[i].permute(1, 2, 3, 0).cpu().numpy()
+#                 # gt_img = colored_gt[i].permute(1, 2, 3, 0).cpu().numpy()
+#                 # middle_slice = pred_img.shape[0]//2
+#                 # pred_img = pred_img[middle_slice]
+#                 # gt_img = gt_img[middle_slice]
+#
+#             else:
+#                 colored_preds = apply_color_map(predicted_classes, three_d=three_d).type(torch.uint8)
+#                 colored_gt = apply_color_map(Dataset.split_mask(y).long(), three_d=three_d).type(torch.uint8)
+#
+#                 pred_img = colored_preds[i].permute(1, 2, 0).cpu().numpy()
+#                 gt_img = colored_gt[i].permute(1, 2, 0).cpu().numpy()
+#                 separator_line = np.ones((pred_img.shape[0], 5, 3), dtype=np.uint8) * 255  # Red line
+#                 concatenated_img = np.concatenate([pred_img, separator_line, gt_img], axis=1)
+#
+#                 # Convert to PIL Image
+#                 concatenated_img_pil = Image.fromarray(concatenated_img)
+#
+#                 # Save the concatenated image
+#                 concatenated_img_pil.save(f"{folder}/pred_gt_{idx}_{i}.png")
+#
+#         if three_d:
+#             break
+#
+#     model.train()
 
 
-def save_instance_by_colors(loader, model, folder, device="cuda", three_d=False, wandb_tracking=False):
+# def visualize_3d_image_from_classes(image, save_path, wandb_tracking=False):
+#     # if on GPU
+#     image_np = image.cpu().numpy()
+#
+#     x, y, z = np.indices(image_np.shape)
+#     x, y, z = x[image_np > 0], y[image_np > 0], z[image_np > 0]  # Get indices where the voxel value is not zero
+#     values = image_np[image_np > 0]  # Get voxel values that are not zero
+#
+#     colors = np.where(values == 1, 'green', 'red')
+#
+#     # Create 3D scatter plot
+#     fig = go.Figure(data=[
+#         go.Scatter3d(
+#             x=x.flatten(),
+#             y=y.flatten(),
+#             z=z.flatten(),
+#             mode='markers',
+#             marker=dict(
+#                 size=5,
+#                 color=colors,  # Color by voxel value
+#                 opacity=0.2
+#             )
+#         )
+#     ])
+#
+#     # Update layout for better visualization
+#     fig.update_layout(scene=dict(
+#         xaxis=dict(nticks=4, range=[0, image_np.shape[0]]),
+#         yaxis=dict(nticks=4, range=[0, image_np.shape[1]]),
+#         zaxis=dict(nticks=4, range=[0, image_np.shape[2]]),
+#         aspectratio=dict(x=1, y=1, z=1)
+#     ))
+#     # Save the figure to a temporary file
+#     fig.write_html(save_path)
+#     if wandb_tracking:
+#         table = wandb.Table(columns=["plotly_figure"])
+#         table.add_data(wandb.Html(save_path))
+#         # Log the image to wandb
+#         wandb.log({os.path.basename(save_path): table})
+
+
+def save_instance_by_colors(loader, model, folder, wandb_step, device="cuda", three_d=False, three_d_by_two_d=False, wandb_tracking=False):
     print("=> saving instance images")
     model.eval()
     for idx, (data, class_targets, marker_targets) in enumerate(loader):
+        if three_d and three_d_by_two_d:
+            depth = data.shape[-3]
+            batch_size = data.shape[0]
+            data = three_d_to_two_d_represantation(data)
         data = data.to(device=device, dtype=torch.float32)
         with torch.no_grad():
-            class_predictions, marker_predictions = model(data)
+            class_predictions, marker_predictions = model(data.to(device=device))
+            if three_d and three_d_by_two_d:
+                class_predictions = two_d_to_three_d_represantation(images=class_predictions,
+                                                                              batch_size=batch_size, depth=depth)
+                marker_predictions = two_d_to_three_d_represantation(images=marker_predictions,
+                                                                               batch_size=batch_size,depth=depth)
             predicted_classes = predict_classes(class_predictions)
             # marker_predictions = predict_classes(marker_predictions)
             marker_predictions = (torch.sigmoid(marker_predictions) > 0.5).int().squeeze(1)
@@ -311,20 +332,21 @@ def save_instance_by_colors(loader, model, folder, device="cuda", three_d=False,
         gt = class_targets[0].cpu().numpy().astype(np.uint8)
         if three_d:
             visualize_3d_image_instances(image=predicted, save_path=f"{folder}/pred_instances.html",
-                                         wandb_tracking=wandb_tracking)
+                                         wandb_tracking=wandb_tracking, wandb_step=wandb_step)
             visualize_3d_image_instances(image=gt, save_path=f"{folder}/gt_instances.html",
-                                         wandb_tracking=wandb_tracking)
+                                         wandb_tracking=wandb_tracking, wandb_step=wandb_step)
         else:
             colored_instance_preds = Image.fromarray(get_instance_color(predicted))
             colored_instance_gt = Image.fromarray(get_instance_color(gt))
             colored_instance_preds.save(f"{folder}/pred_instances.png")
             colored_instance_gt.save(f"{folder}/gt_instances.png")
-            wandb.log({"pred_instances": wandb.Image(colored_instance_preds)})
-            wandb.log({"gt_instances": wandb.Image(colored_instance_gt)})
+            if wandb_tracking:
+                wandb.log({"pred_instances": wandb.Image(colored_instance_preds)}, step=wandb_step)
+                wandb.log({"gt_instances": wandb.Image(colored_instance_gt)}, step=wandb_step)
         break
 
 
-def visualize_3d_image_instances(image, save_path, wandb_tracking=False):
+def visualize_3d_image_instances(image, save_path, wandb_step, wandb_tracking=False):
     # Get indices and values where the voxel value is not zero
     x, y, z = np.indices(image.shape)
     x, y, z = x[image > 0], y[image > 0], z[image > 0]
@@ -372,7 +394,7 @@ def visualize_3d_image_instances(image, save_path, wandb_tracking=False):
     if wandb_tracking:
         table = wandb.Table(columns=["plotly_figure"])
         table.add_data(wandb.Html(save_path))
-        wandb.log({os.path.basename(save_path): table})
+        wandb.log({os.path.basename(save_path): table}, step=wandb_step)
 
 
 def separate_masks(instance_mask):
@@ -548,6 +570,77 @@ def inference(class_predictions, marker_predictions, three_d=False):
     labeled_preds = find_closest_marker_fmm(predicted_foregound, labeled_markers)
     return labeled_preds
 
+def three_d_to_two_d_represantation(images):
+    """
+    Args:
+    - image: 5D tensor of shape (batch_size, channel, depth, height, width)
+
+    Returns:
+    - A 4D tensor of shape (batch_size * depth, 3, height, width) containing the slices
+    """
+    batch_size, channel, depth, height, width = images.shape
+
+    expanded_images = torch.cat([images[:, :, 0:1, :, :], images, images[:, :, -1:, :, :]], dim=2)
+    slices = torch.zeros((batch_size, depth, 3, height, width), dtype=images.dtype)
+
+    slices[:, :, 0] = expanded_images[:, :, 0:depth]
+    slices[:, :, 1] = expanded_images[:, :, 1:depth + 1]
+    slices[:, :, 2] = expanded_images[:, :, 2:depth + 2]
+
+    slices = slices.view(batch_size * depth, 3, height, width)
+    return slices
+
+def two_d_to_three_d_represantation(images, batch_size, depth):
+    """
+        Args:
+        - images: 4D tensor of shape (batch_size * depth, channel, height, width) containing the slices
+        - batch_size: The original batch size
+        - depth: The original depth size
+
+        Returns:
+        - 5D tensor of shape (batch_size, channel, depth, height, width)
+        """
+    batch_size_depth, channel, height, width = images.shape
+    assert batch_size * depth == batch_size_depth, "The input images shape does not match the provided batch_size and depth."
+    reshaped_images = images.view(batch_size, depth, channel, height, width)
+
+    return reshaped_images.permute(0, 2, 1, 3, 4)
+
+def shrink_cells(input, num_layers_to_shrink, three_d):
+    """
+       Shrinks each cell in a 3D image by num_layers_to_shrink voxel layers without changing the overall image size.
+
+       Parameters:
+       - tensor_3d (torch.Tensor): A 3D tensor containing cell labels.
+
+       Returns:
+       - torch.Tensor: A 3D tensor with each cell shrunk by num_layers_to_shrink voxel layers.
+       """
+    if three_d:
+        strel = np.ones((3, 3, 3))
+    else:
+        strel = np.ones((3, 3))
+    # Convert PyTorch tensor to NumPy array
+    images = input.numpy()
+
+    # Create an empty array to store the shrunk cells
+    shrunk_array = np.zeros_like(images)
+    for i in range(images.shape[0]):
+        # Get unique cell values (excluding background, assumed to be 0)
+        cell_values = np.unique(images[i])
+        cell_values = cell_values[cell_values != 0]
+
+        # Perform erosion on each cell separately
+        for value in cell_values:
+            cell_mask = (images[i] == value)
+            eroded_mask = binary_erosion(cell_mask, structure=strel, iterations=num_layers_to_shrink)
+            shrunk_array[i][eroded_mask] = value
+
+    # Convert back to PyTorch tensor
+    shrunk_tensor = torch.from_numpy(shrunk_array)
+
+    return shrunk_tensor
+
 
 def t_inference():
     markers = np.array([[0, 0, 0, 0, 0],
@@ -562,8 +655,6 @@ def t_inference():
                      [1, 2, 1, 1, 1],
                      [2, 2, 2, 2, 1]],)
 
-
-
     pred, markers = torch.from_numpy(pred), torch.from_numpy(markers)
     image = inference(pred, markers, False)
     print("result", image)
@@ -572,6 +663,11 @@ def t_inference():
     # plt.savefig('output.png')  # Save the plot as an image file
     # plt.close()  # Close the figure to release memory
 
+def t_shrink_cells():
+
+    image = shrink_cells(torch.ones((2, 3, 12, 12)), 1, True)
+    print(image)
 
 if __name__ == "__main__":
-    t_inference()
+    # t_inference()
+    t_shrink_cells()
