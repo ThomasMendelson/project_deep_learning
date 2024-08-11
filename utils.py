@@ -335,6 +335,9 @@ def save_instance_by_colors(loader, model, folder, wandb_step, device="cuda", th
                                          wandb_tracking=wandb_tracking, wandb_step=wandb_step)
             visualize_3d_image_instances(image=gt, save_path=f"{folder}/gt_instances.html",
                                          wandb_tracking=wandb_tracking, wandb_step=wandb_step)
+            visualize_3d_image_instances(image=marker_predictions[0].cpu().numpy().astype(np.uint8), save_path=f"{folder}/markers_pred.html",
+                                         wandb_tracking=wandb_tracking, wandb_step=wandb_step)
+
         else:
             colored_instance_preds = Image.fromarray(get_instance_color(predicted))
             colored_instance_gt = Image.fromarray(get_instance_color(gt))

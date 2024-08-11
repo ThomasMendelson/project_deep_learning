@@ -8,7 +8,7 @@ from tqdm import tqdm
 from dataset import Dataset
 from dataset3D import Dataset3D
 from transformer.models.vit import ViT_UNet
-from monai.losses import DiceCELoss
+from monai.losses import DiceCELoss, FocalLoss, DiceFocalLoss
 import torch.nn.functional as F
 
 from utils import (
@@ -25,46 +25,53 @@ from utils import (
 )
 
 # Hyperparameters
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 2e-4
 WEIGHT_DECAY = 1e-3
-L1_LAMBDA = 1e-5
+L1_LAMBDA = 0  # 1e-5
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-BATCH_SIZE = 1
-NUM_EPOCHS = 100
-NUM_WORKERS = 4
-CLASS_WEIGHTS = [0.15, 0.6, 0.25]  # [0.1, 0.6, 0.3] [0.1, 0.7, 0.2]
+BATCH_SIZE = 8
+NUM_EPOCHS = 150
+NUM_WORKERS = 8
+CLASS_WEIGHTS = [0.15, 0.6, 0.25]  # [0.2, 0.6, 0.2] [0.1, 0.6, 0.3] [0.1, 0.7, 0.2]
+MARKERS_WEIGHTS = [0.4, 0.6]
 
 PATCH_SIZE = 16
 HIDDEN_SIZE = 512
 MLP_DIM = 2048
+
 NUM_LAYERS = 4
 NUM_HEADS = 8
 PROJ_TYPE = "conv"
-DROPOUT_RATE = 0.2
+DROPOUT_RATE = 0.1
+SPARSE_DIM = 2
+QKV_BIAS = True
 
 PIN_MEMORY = False
 LOAD_MODEL = False
 WANDB_TRACKING = True
 
-CROP_SIZE = (32, 256, 256) #(32, 128, 128)  # (32, 256, 256)
+CROP_SIZE = (32, 128, 128) #(32, 128, 128)  # (32, 256, 256)
 # CROP_SIZE = (256, 256)
 THREE_D = True
-THREE_D_BY_TWO_D = True
+THREE_D_BY_TWO_D = False
+RUNAI = True
+
 if THREE_D:
     # 3D
-    # TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02"
-    # TRAIN_SEG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/SEG"
-    # TRAIN_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/TRA2"
-    # VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01"
-    # VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG"
-    # VAL_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/TRA2"
-
-    TRAIN_IMG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/02"
-    TRAIN_SEG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/02_GT/SEG"
-    TRAIN_TRA_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/02_GT/TRA2"
-    VAL_IMG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/01"
-    VAL_MASK_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+01_GT//SEG"
-    VAL_TRA_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+01_GT//TRA2"
+    if RUNAI:
+        TRAIN_IMG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/02"
+        TRAIN_SEG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/02_GT/SEG"
+        TRAIN_TRA_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/02_GT/TRA2"
+        VAL_IMG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/01"
+        VAL_MASK_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/01_GT/SEG"
+        VAL_TRA_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/01_GT/TRA2"
+    else:
+        TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02"
+        TRAIN_SEG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/SEG"
+        TRAIN_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/TRA2"
+        VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01"
+        VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG"
+        VAL_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/TRA2"
 else:
     # 2D
     TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/02"
@@ -74,7 +81,10 @@ else:
     VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/01_GT/SEG"
     VAL_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N2DH-SIM+/01_GT/TRA2"
 
-
+if RUNAI:
+    SAVE_PATH = "/gpfs0/tamyr/users/thomasm/ckpts/"
+else:
+    SAVE_PATH = "/raid/data/users/thomasm/ckpts/"
 
 def calculate_l1_loss(model):
     l1_loss = sum(torch.sum(torch.abs(param)) for param in model.parameters())
@@ -191,6 +201,7 @@ def main():
         wandb.init(project="vit_unet",
                    config={
                        "THREE_D": THREE_D,
+                       "THREE_D_BY_TWO_D": THREE_D_BY_TWO_D,
                        "epochs": NUM_EPOCHS,
                        "batch_size": BATCH_SIZE,
                        "lr": LEARNING_RATE,
@@ -210,33 +221,44 @@ def main():
     if THREE_D:
         if THREE_D_BY_TWO_D:
             # 3D by 2D slices
-            model = ViT_UNet(in_channels=3, out_channels=3, img_size=CROP_SIZE[-2:],
+            model = ViT_UNet(in_channels=3, out_channels=3, img_size=CROP_SIZE[-2:], qkv_bias=QKV_BIAS,
                              patch_size=PATCH_SIZE, hidden_size=HIDDEN_SIZE, mlp_dim=MLP_DIM, num_layers=NUM_LAYERS,
-                             num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE,
+                             num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE, spatial_dims=SPARSE_DIM,
                              classification=False, three_d=(THREE_D and (not THREE_D_BY_TWO_D)), device=DEVICE).to(DEVICE)
         else:
             # 3D
-            model = ViT_UNet(in_channels=1, out_channels=3, img_size=CROP_SIZE,
+            SPARSE_DIM = 3
+            model = ViT_UNet(in_channels=1, out_channels=3, img_size=CROP_SIZE, qkv_bias=QKV_BIAS,
                              patch_size=PATCH_SIZE, hidden_size=HIDDEN_SIZE, mlp_dim=MLP_DIM, num_layers=NUM_LAYERS,
-                             num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE,
+                             num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE, spatial_dims=SPARSE_DIM,
                              classification=False, three_d=THREE_D, device=DEVICE).to(DEVICE)
 
     else:
         # 2D
-        model = ViT_UNet(in_channels=1, out_channels=3, img_size=CROP_SIZE,
+        model = ViT_UNet(in_channels=1, out_channels=3, img_size=CROP_SIZE,qkv_bias=QKV_BIAS,
                          patch_size=PATCH_SIZE, hidden_size=HIDDEN_SIZE, mlp_dim=MLP_DIM, num_layers=NUM_LAYERS,
-                         num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE,
+                         num_heads=NUM_HEADS, proj_type=PROJ_TYPE, dropout_rate=DROPOUT_RATE, spatial_dims=SPARSE_DIM,
                          classification=False, three_d=THREE_D, device=DEVICE).to(DEVICE)
 
 
     class_weights = torch.FloatTensor(CLASS_WEIGHTS).to(DEVICE)
-    # criterion = [nn.CrossEntropyLoss(weight=class_weights), nn.BCEWithLogitsLoss()]
-    criterion = [DiceCELoss(to_onehot_y=False, softmax=True, squared_pred=True, weight=class_weights),
+    markers_weights = torch.FloatTensor(MARKERS_WEIGHTS).to(DEVICE)
+
+    # CrossEntropyLoss
+    # criterion = [nn.CrossEntropyLoss(weight=class_weights)]  # , nn.BCEWithLogitsLoss()]
+    # DiceCELoss
+    criterion = [DiceCELoss(softmax=True, squared_pred=True, weight=class_weights),
                  # in reference was , batch=True)
                  nn.BCEWithLogitsLoss()]
+    # FocalLoss
+    # criterion = [FocalLoss(softmax=True, squared_pred=True, gamma=2, alpha=class_weights),
+    #              nn.BCEWithLogitsLoss()]
+    # DiceFocalLoss
+    # criterion = [DiceFocalLoss(softmax=True, squared_pred=True, weight=class_weights, gamma=2),
+    #              nn.BCEWithLogitsLoss()]
 
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-6, verbose=True)
+    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+    scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=5, min_lr=1e-6)
 
     train_loader = get_loader(dir=TRAIN_IMG_DIR, seg_dir=TRAIN_SEG_DIR, tra_dir=TRAIN_TRA_DIR, train_aug=True,
                               shuffle=True,
@@ -252,7 +274,7 @@ def main():
                                             pin_memory=PIN_MEMORY, three_d=THREE_D, device=DEVICE)
 
     if LOAD_MODEL:
-        load_checkpoint(torch.load("checkpoint/vit_checkpoint.pth.tar", map_location=torch.device(DEVICE)), model)
+        load_checkpoint(torch.load(f"{SAVE_PATH}vit_checkpoint.pth.tar", map_location=torch.device(DEVICE)), model)
         model.to(DEVICE)
         check_accuracy(val_loader, model, device=DEVICE, three_d=THREE_D, three_d_by_two_d=THREE_D_BY_TWO_D)
 
@@ -276,9 +298,9 @@ def main():
                 "state_dict": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
             }
-            save_checkpoint(checkpoint, filename="checkpoint/vit_checkpoint2.pth.tar")
+            save_checkpoint(checkpoint, filename=f"{SAVE_PATH}vit_checkpoint2.pth.tar")
 
-            save_instance_by_colors(loader=val_loader, model=model, folder="checkpoint/saved_images2", device=DEVICE,
+            save_instance_by_colors(loader=val_loader, model=model, folder=f"{SAVE_PATH}saved_images", device=DEVICE,
                                     three_d=THREE_D, wandb_tracking=WANDB_TRACKING, wandb_step=wandb_step,
                                     three_d_by_two_d=THREE_D_BY_TWO_D)
             if (epoch + 1) != NUM_EPOCHS:
@@ -291,7 +313,7 @@ def main():
     check_accuracy(test_check_accuracy_loader, model, device=DEVICE, three_d=THREE_D, three_d_by_two_d=THREE_D_BY_TWO_D)
     if NUM_EPOCHS % 10 != 0:
         # save instance image
-        save_instance_by_colors(loader=test_check_accuracy_loader, model=model, folder="checkpoint", three_d=THREE_D,
+        save_instance_by_colors(loader=test_check_accuracy_loader, model=model, folder=f"{SAVE_PATH}", three_d=THREE_D,
                                 device=DEVICE, wandb_tracking=WANDB_TRACKING, wandb_step=wandb_step,
                                 three_d_by_two_d=THREE_D_BY_TWO_D)
 

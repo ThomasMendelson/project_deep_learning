@@ -63,28 +63,39 @@ class UNET3D(nn.Module):
         skip_connections = skip_connections[::-1]
 
         for idx in range(0, len(self.ups), 2):
-            if idx == len(self.ups)-2:
-                x_classes, x_markers = self.ups[idx](x), self.up_marker[0](x)
-                skip_connection = skip_connections[idx // 2]
-                if x_classes.shape != skip_connection.shape:
-                    x_classes = F.interpolate(x_classes, size=skip_connection.shape[2:], mode='trilinear', align_corners=False)
-                if x_markers.shape != skip_connection.shape:
-                    x_markers = F.interpolate(x_markers, size=skip_connection.shape[2:], mode='trilinear', align_corners=False)
+             if idx == len(self.ups)-2:
+                 x_classes, x_markers = self.ups[idx](x), self.up_marker[0](x)
+                 skip_connection = skip_connections[idx // 2]
+                 if x_classes.shape != skip_connection.shape:
+                     x_classes = F.interpolate(x_classes, size=skip_connection.shape[2:], mode='trilinear', align_corners=False)
+                 if x_markers.shape != skip_connection.shape:
+                     x_markers = F.interpolate(x_markers, size=skip_connection.shape[2:], mode='trilinear', align_corners=False)
 
-                x_classes, x_markers = torch.cat((skip_connection, x_classes), dim=1), torch.cat((skip_connection, x_markers), dim=1)
-                x_classes, x_markers = self.ups[idx + 1](x_classes), self.up_marker[1](x_markers)
+                 x_classes, x_markers = torch.cat((skip_connection, x_classes), dim=1), torch.cat((skip_connection, x_markers), dim=1)
+                 x_classes, x_markers = self.ups[idx + 1](x_classes), self.up_marker[1](x_markers)
 
-            else:
-                x = self.ups[idx](x)
-                skip_connection = skip_connections[idx//2]
+             else:
+                 x = self.ups[idx](x)
+                 skip_connection = skip_connections[idx//2]
 
-                if x.shape != skip_connection.shape:
-                    x = F.interpolate(x, size=skip_connection.shape[2:], mode='trilinear', align_corners=False)
+                 if x.shape != skip_connection.shape:
+                     x = F.interpolate(x, size=skip_connection.shape[2:], mode='trilinear', align_corners=False)
 
-                concat_skip = torch.cat((skip_connection, x), dim=1)
-                x = self.ups[idx+1](concat_skip)
+                 concat_skip = torch.cat((skip_connection, x), dim=1)
+                 x = self.ups[idx+1](concat_skip)
 
         return self.out_classes(x_classes), self.out_marker(x_markers)
+
+        #     x = self.ups[idx](x)
+        #     skip_connection = skip_connections[idx//2]
+        #
+        #     if x.shape != skip_connection.shape:
+        #         x = F.interpolate(x, size=skip_connection.shape[2:], mode='trilinear', align_corners=False)
+        #
+        #     concat_skip = torch.cat((skip_connection, x), dim=1)
+        #     x = self.ups[idx+1](concat_skip)
+        # return self.out_classes(x), None
+
 
 
 def t():

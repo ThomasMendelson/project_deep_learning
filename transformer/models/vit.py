@@ -95,8 +95,8 @@ class UpBlock3D(nn.Module):
 
 class ViT_UNet(nn.Module):
     def __init__(self, device, in_channels=1, out_channels=3, img_size=(256, 256), patch_size=16, hidden_size=512,
-                 mlp_dim=3072, num_layers=12, num_heads=12, proj_type="conv", dropout_rate=0.,
-                 classification=False, three_d=False):
+                 mlp_dim=3072, num_layers=12, num_heads=12, proj_type="conv", dropout_rate=0., spatial_dims=2,
+                 qkv_bias=True, classification=False, three_d=False):
         super(ViT_UNet, self).__init__()
         self.device = device
         self.three_d = three_d
@@ -112,6 +112,8 @@ class ViT_UNet(nn.Module):
                 proj_type=proj_type,
                 dropout_rate=dropout_rate,
                 classification=classification,
+                spatial_dims=spatial_dims,
+                qkv_bias=qkv_bias,
             )
             self.doubleconv = UpBlock3D(in_channels, 32, 16, True)
 
@@ -137,7 +139,8 @@ class ViT_UNet(nn.Module):
                 proj_type=proj_type,
                 dropout_rate=dropout_rate,
                 classification=classification,
-                spatial_dims=2,
+                spatial_dims=spatial_dims,
+                qkv_bias=qkv_bias,
             )
             self.doubleconv = UpBlock(in_channels, 32, 16, True)
 

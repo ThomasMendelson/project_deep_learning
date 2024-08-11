@@ -1,0 +1,123 @@
+name: "vit_unet"
+ckpt_path_dgx: "/raid/data/users/thomasm/ckpts/"
+ckpt_path_runai: "/gpfs0/tamyr/users/thomasm/workspace/ckpts/"
+wandb: True
+three_d: True
+three_d_by_two_d: True
+runai: True
+
+data:
+  dir_dgx: "/mnt/tmp/data/users/thomasm/"
+  dir_runai: "/gpfs0/tamyr/projects/data/CellTrackingChallenge/"
+
+  batch_size: 1
+  num_workers: 8
+  augmentations:
+    RandomAffine:
+      scales:
+        - 0.9
+        - 1.1
+      degrees: 10
+      translation: 5
+    RandomGamma:
+      log_gamma: 0.3  # gamma between 0.74 and 1.34
+    RandomNoise:
+      std: 0.015
+    RandomElasticDeformation:
+      num_control_points: 7
+#      max_displacement: 7
+      locked_borders: 2
+  active_augmentations:
+    - H_RandomFlip
+    - V_RandomFlip
+    - D_RandomFlip
+    - RandomAffine
+    - RandomGamma
+    - RandomNoise
+#    - RandomElasticDeformation
+
+model:
+  in_channels: 1
+  out_channels: 3
+  img_size:
+    - 32
+    - 256
+    - 256
+  patch_size: 16
+  spatial_dims: 3
+  hidden_size: 512
+  mlp_dim: 2048
+  num_layers: 4
+  num_heads: 8
+  classification: False
+  proj_type: "conv"
+  post_activation: ''
+  num_classes: 1
+  dropout_rate: 0.2
+  qkv_bias: True
+
+
+
+trainer:
+  epochs: 100
+  gpu:
+#    - 0
+#    - 1
+    - 2
+#    - 3
+
+loss:
+  name:
+    CrossEntropyLoss:
+      use_class_weights: True
+    DiceCELoss:
+      softmax: True
+      squared_pred: True
+    FocalLoss:
+      softmax: True
+      squared_pred: True
+      gamma: 2
+    DiceFocalLoss:
+      softmax: True
+      squared_pred: True
+      gamma: 2
+    BCEWithLogitsLoss: {}
+  class_weights:
+    - 0.15
+    - 0.6
+    - 0.25
+  markers_weights:
+    - 0.4
+    - 0.6
+  active_losses:
+    - DiceCELoss # 'CrossEntropyLoss' 'DiceCELoss' 'FocalLoss' 'DiceFocalLoss'
+    - BCEWithLogitsLoss
+
+
+optimizer:
+  name: 'AdamW'
+  lr: 1.e-4
+  weight_decay: 1e-3
+  l1_lambda: 1e-5
+
+scheduler:
+  name: 'ReduceLROnPlateau'
+  factor: 0.5
+  patience: 5
+  min_lr: 1.e-6
+
+#  name: 'CosineAnnealingLR'
+#  T_max: 40.
+#  eta_min: 1.e-6
+#   name: 'ExponentialLR'
+#   gamma: 0.97
+#  name: 'MultiStepLR'
+#  gamma: 0.75
+#  milestones:
+#    - 5
+#    - 25
+#    - 100
+#    - 150
+#    - 175
+#    - 100
+#    - 155

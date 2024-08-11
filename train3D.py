@@ -7,7 +7,7 @@ import numpy as np
 from tqdm import tqdm
 from PIL import Image
 import torch.nn.functional as F
-from monai.losses import DiceCELoss
+from monai.losses import DiceCELoss, FocalLoss, DiceFocalLoss
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 # import albumentations as A
@@ -31,31 +31,31 @@ from utils import (
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-3
 L1_LAMBDA = 1e-5
-DEVICE = "cuda:1" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 4
 NUM_EPOCHS = 100
-NUM_WORKERS = 4
-CROP_SIZE = (16, 256, 256)
-CLASS_WEIGHTS = [0.1, 0.7, 0.2]  # [0.15, 0.6, 0.25]  # [0.1, 0.6, 0.3]
+NUM_WORKERS = 8
+CROP_SIZE = (32, 256, 256)
+CLASS_WEIGHTS = [0.2, 0.6, 0.2]  # [0.15, 0.6, 0.25]  # [0.1, 0.6, 0.3] [0.1, 0.7, 0.2]
 PIN_MEMORY = False
 LOAD_MODEL = False
 WANDB_TRACKING = True
 THREE_D = True
 # 3D
-# TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02"
-# TRAIN_SEG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/SEG"
-# TRAIN_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/TRA2"
-# VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01"
-# VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG"
-# VAL_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/TRA2"
+TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02"
+TRAIN_SEG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/SEG"
+TRAIN_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/TRA2"
+VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01"
+VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG"
+VAL_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/TRA2"
 
 
-TRAIN_IMG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/02"
-TRAIN_SEG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/SEG"
-TRAIN_TRA_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/TRA2"
-VAL_IMG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/01"
-VAL_MASK_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/SEG"
-VAL_TRA_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/TRA2"
+# TRAIN_IMG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/02"
+# TRAIN_SEG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/SEG"
+# TRAIN_TRA_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/TRA2"
+# VAL_IMG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/01"
+# VAL_MASK_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/SEG"
+# VAL_TRA_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/TRA2"
 
 # TRAIN_IMG_DIR = r"C:\Users\beaviv\PycharmProjects\ImageProcessing\Datasets\Fluo-N3DH-SIM+\02"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02"
 # TRAIN_MASK_DIR = r"C:\Users\beaviv\PycharmProjects\ImageProcessing\Datasets\Fluo-N3DH-SIM+\02_GT\SEG"  # "Fluo-N2DH-SIM+_training-datasets/Fluo-N2DH-SIM+/02_ERR_SEG"
@@ -165,13 +165,22 @@ def main():
     # model = UNet3D_2(in_channels=1, num_classes=3).to(DEVICE)
 
     class_weights = torch.FloatTensor(CLASS_WEIGHTS).to(DEVICE)
-    criterion = [nn.CrossEntropyLoss(weight=class_weights), nn.BCEWithLogitsLoss()]
-    # criterion = [DiceCELoss(to_onehot_y=False, softmax=True, squared_pred=True, weight=class_weights),
-    #              # in reference was , batch=True)
+    #CrossEntropyLoss
+    # criterion = [nn.CrossEntropyLoss(weight=class_weights)]#, nn.BCEWithLogitsLoss()]
+    #DiceCELoss
+    criterion = [DiceCELoss(softmax=True, squared_pred=True, weight=class_weights, batch=True),
+                 # in reference was , batch=True)
+                 nn.BCEWithLogitsLoss()]
+    #FocalLoss
+    # criterion = [FocalLoss(gamma=2, alpha=class_weights),
+    #              nn.BCEWithLogitsLoss()]
+    #DiceFocalLoss
+    # criterion = [DiceFocalLoss(softmax=True, squared_pred=True, weight=class_weights, gamma=2),
     #              nn.BCEWithLogitsLoss()]
 
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-6, verbose=True)
+
+    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+    scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=5, min_lr=1e-6)
 
     train_loader = get_loader(dir=TRAIN_IMG_DIR, seg_dir=TRAIN_SEG_DIR, tra_dir=TRAIN_TRA_DIR, train_aug=True,
                               shuffle=True,
@@ -217,21 +226,19 @@ def main():
             # save_instance_by_colors(loader=val_loader, model=model, folder="checkpoint/saved_images", device=DEVICE,
             #                         three_d=THREE_D, wandb_tracking=WANDB_TRACKING, wandb_step=wandb_step)
             if (epoch + 1) != NUM_EPOCHS:
-                check_accuracy(test_check_accuracy_loader, model, num_image=50, device=DEVICE, three_d=THREE_D)
-                # check_accuracy_multy_models(test_check_accuracy_loader, [model], num_image=50, device=DEVICE, three_d=THREE_D)
+                # check_accuracy(test_check_accuracy_loader, model, num_image=50, device=DEVICE, three_d=THREE_D)
+                check_accuracy_multy_models(test_check_accuracy_loader, [model], num_image=50, device=DEVICE, three_d=THREE_D)
 
         if WANDB_TRACKING:
             wandb_step += 1
 
-    check_accuracy(test_check_accuracy_loader, model, device=DEVICE, three_d=THREE_D)
-    # check_accuracy_multy_models(test_check_accuracy_loader, [model], device=DEVICE, three_d=THREE_D)
-    if NUM_EPOCHS % 10 != 0:
-        # save instance image
-        save_instance_by_colors(loader=test_check_accuracy_loader, model=model, folder="checkpoint", three_d=THREE_D,
-                                device=DEVICE, wandb_tracking=WANDB_TRACKING, wandb_step=wandb_step)
+    # check_accuracy(test_check_accuracy_loader, model, device=DEVICE, three_d=THREE_D)
+    check_accuracy_multy_models(test_check_accuracy_loader, [model], device=DEVICE, three_d=THREE_D)
+    # save instance image
+    save_instance_by_colors(loader=test_check_accuracy_loader, model=model, folder="checkpoint", three_d=THREE_D,
+                            device=DEVICE, wandb_tracking=WANDB_TRACKING, wandb_step=wandb_step)
 
     if WANDB_TRACKING:
-        wandb_step += 1
         # torch.onnx.export(model, torch.randn(1, 1, CROP_SIZE, device=DEVICE), "model.onnx")
         # wandb.save("model.onnx")
         # print("=> saved model.onnx to wandb")
@@ -275,7 +282,7 @@ def t_acc():
 
 
 if __name__ == "__main__":
-    # main()
-    t_acc()
+    main()
+    # t_acc()
     # t_acc_mul_models()
     # t_save_instance_by_colors()
