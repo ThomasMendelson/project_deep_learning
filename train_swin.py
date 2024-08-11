@@ -56,7 +56,7 @@ else:
     VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01"
     VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG"
     VAL_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/TRA2"
-PRETRAINED_DIR = f"{SAVE_PATH}pretrained_swinunetr"
+PRETRAINED_DIR = f"{SAVE_PATH}pretrained_swinunetr.pt"
 
 def calculate_l1_loss(model):
     l1_loss = sum(torch.sum(torch.abs(param)) for param in model.parameters())

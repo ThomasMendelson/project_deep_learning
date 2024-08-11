@@ -18,10 +18,9 @@ class DoubleConv3D(nn.Module):
         return self.conv(x)
 
 class CustomSwinUNETR(nn.Module):
-    def __init__(self, img_size, in_channels, out_channels, feature_size=48):
+    def __init__(self, in_channels, out_channels, feature_size=48):
         super(CustomSwinUNETR, self).__init__()
         self.swin_unetr = SwinUNETR(
-            img_size=img_size,
             in_channels=in_channels,
             out_channels=feature_size,
             feature_size=feature_size,
@@ -51,7 +50,6 @@ class CustomSwinUNETR(nn.Module):
 
 def get_SwinUNETR_model(crop_size, device, pretrained_path):
     model = CustomSwinUNETR(
-        img_size=crop_size,
         in_channels=1,
         out_channels=3,
         feature_size=48,
