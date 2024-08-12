@@ -18,9 +18,10 @@ class DoubleConv3D(nn.Module):
         return self.conv(x)
 
 class CustomSwinUNETR(nn.Module):
-    def __init__(self, in_channels, out_channels, feature_size=48):
+    def __init__(self, img_size, in_channels, out_channels, feature_size=48):
         super(CustomSwinUNETR, self).__init__()
         self.swin_unetr = SwinUNETR(
+            img_size=img_size,
             in_channels=in_channels,
             out_channels=feature_size,
             feature_size=feature_size,
@@ -42,14 +43,12 @@ class CustomSwinUNETR(nn.Module):
 
         x_marker = self.beforelast_marker(x)
         x_marker = self.out_marker(x_marker)
-        # Crop the outputs back to the original dimensions (16, 128, 128)
-        # class_output = class_output[:, :, 8:24, :, :]
-        # marker_output = marker_output[:, :, 8:24, :, :]
         return x_class, x_marker
 
 
-def get_SwinUNETR_model(crop_size, device, pretrained_path):
+def get_SwinUNETR_model(crop_size, device, pretrained_path, freeze_pre_trained):
     model = CustomSwinUNETR(
+        img_size=crop_size,
         in_channels=1,
         out_channels=3,
         feature_size=48,
@@ -67,10 +66,16 @@ def get_SwinUNETR_model(crop_size, device, pretrained_path):
     pretrained_dict = {k: v for k, v in pretrained_dict.items() if
                        k in model_dict and v.shape == model_dict[k].shape}
 
+
     # Update the current model's state dict
     model_dict.update(pretrained_dict)
 
     # Load the updated state dict into the model
     model.load_state_dict(model_dict)
+
+    if freeze_pre_trained:
+        for name, param in model.named_parameters():
+            if name in pretrained_dict:
+                param.requires_grad = False
     return model
 

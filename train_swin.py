@@ -24,11 +24,11 @@ from utils import (
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-3
 L1_LAMBDA = 0  # 1e-5
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 BATCH_SIZE = 8
-NUM_EPOCHS = 150
+NUM_EPOCHS = 200
 NUM_WORKERS = 4
-CLASS_WEIGHTS = [0.2, 0.6, 0.2]  # [0.15, 0.6, 0.25][0.1, 0.6, 0.3] [0.1, 0.7, 0.2]
+CLASS_WEIGHTS = [0.15, 0.6, 0.25]  # [0.2, 0.6, 0.2][0.1, 0.6, 0.3] [0.1, 0.7, 0.2]
 MARKERS_WEIGHTS = [0.4, 0.6]
 
 PIN_MEMORY = False
@@ -38,9 +38,11 @@ WANDB_TRACKING = True
 CROP_SIZE = (32, 128, 128) #(32, 128, 128)  # (32, 256, 256)
 THREE_D = True
 THREE_D_BY_TWO_D = False
-RUNAI = True
+RUNAI = False
+FREEZE_PRE_TRAINED = True
 
 if RUNAI:
+    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     SAVE_PATH = "/gpfs0/tamyr/users/thomasm/ckpts/"
     TRAIN_IMG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/02"
     TRAIN_SEG_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/02_GT/SEG"
@@ -49,6 +51,7 @@ if RUNAI:
     VAL_MASK_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/01_GT/SEG"
     VAL_TRA_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/01_GT/TRA2"
 else:
+    DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
     SAVE_PATH = "/raid/data/users/thomasm/ckpts/"
     TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02"
     TRAIN_SEG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/SEG"
@@ -172,7 +175,7 @@ def main():
                        "img_size": CROP_SIZE,
                    })
         wandb_step = 0
-    model = get_SwinUNETR_model(CROP_SIZE, DEVICE, PRETRAINED_DIR)
+    model = get_SwinUNETR_model(CROP_SIZE, DEVICE, PRETRAINED_DIR, FREEZE_PRE_TRAINED)
 
     class_weights = torch.FloatTensor(CLASS_WEIGHTS).to(DEVICE)
     markers_weights = torch.FloatTensor(MARKERS_WEIGHTS).to(DEVICE)
@@ -190,7 +193,7 @@ def main():
     # criterion = [DiceFocalLoss(softmax=True, squared_pred=True, weight=class_weights, gamma=2),
     #              nn.BCEWithLogitsLoss()]
 
-    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+    optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=5, min_lr=1e-6)
 
     train_loader = get_loader(dir=TRAIN_IMG_DIR, seg_dir=TRAIN_SEG_DIR, tra_dir=TRAIN_TRA_DIR, train_aug=True,
