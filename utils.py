@@ -514,9 +514,7 @@ def inference(class_predictions, marker_predictions, three_d=False):
         min_distances = np.full(foreground.shape, np.inf)
 
         unique_markers = np.unique(labeled_markers)
-        print(len(unique_markers))
         unique_markers = unique_markers[unique_markers > 0]
-        print(len(unique_markers))
 
         for marker in unique_markers:
             marker_mask = (labeled_markers == marker)
