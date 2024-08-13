@@ -98,14 +98,15 @@ def get_cell_instances(input_np, marker=False,  three_d=False):
         strel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]])
 
     if marker:
-        foreground_mask = input_np
+        foreground_mask = input_np.astype(np.uint8)
     else:
         foreground_mask = (input_np == 2).astype(np.uint8)
     labeled, max_num = label(foreground_mask, structure=strel)
     return labeled, max_num
 
 
-def check_accuracy(loader, model, device="cuda", num_image=None, three_d=False, three_d_by_two_d=False):
+def check_accuracy(loader, model, device="cuda", num_image=None, three_d=False, three_d_by_two_d=False,
+                   save_path=None, name=None):
     print("=> Checking accuracy")
     loader = tqdm(loader)
     seg = 0
@@ -137,8 +138,11 @@ def check_accuracy(loader, model, device="cuda", num_image=None, three_d=False, 
                         seg += accuracy
                         num_iters += 1
                     if num_image is not None and num_iters == num_image:
-                        print(f"seg score for {num_image} image: {seg / num_iters}")
+                        seg_score = seg / num_iters
+                        print(f"seg score for {num_image} image: {seg_score}")
                         model.train()
+                        if save_path is not None and (seg_score >= 0.58):
+                            save_checkpoint(model, filename=f"{save_path}{name}_{seg_score:.4f}.pth.tar")
                         return
 
     print(f"seg score: {seg / num_iters}")
@@ -492,7 +496,7 @@ def save_slices(loader, model, device, num_slices=5, three_d=False):
 
 
 def inference(class_predictions, marker_predictions, three_d=False):
-    def find_closest_marker_fmm(foreground, labeled_markers):
+    def find_closest_marker_fmm(foreground, labeled_markers, three_d):
         """
         Finds the closest marker for each pixel in the foreground using Fast Marching Method.
 
@@ -510,7 +514,9 @@ def inference(class_predictions, marker_predictions, three_d=False):
         min_distances = np.full(foreground.shape, np.inf)
 
         unique_markers = np.unique(labeled_markers)
+        print(len(unique_markers))
         unique_markers = unique_markers[unique_markers > 0]
+        print(len(unique_markers))
 
         for marker in unique_markers:
             marker_mask = (labeled_markers == marker)
@@ -527,6 +533,11 @@ def inference(class_predictions, marker_predictions, three_d=False):
                 # Ensure update only happens where update_mask is True
                 min_distances[update_mask] = distances[update_mask]
                 closest_marker_map[update_mask] = marker
+        if np.any((min_distances == np.inf) & foreground):
+            mask_inf_and_foreground = (min_distances == np.inf) & foreground
+            labeled_preds, _ = get_cell_instances(mask_inf_and_foreground, marker=True, three_d=three_d)
+            labeled_preds = np.where(labeled_preds != 0, labeled_preds + len(unique_markers), labeled_preds)
+            closest_marker_map = np.where(labeled_preds != 0, labeled_preds, closest_marker_map)
 
         return closest_marker_map
 
@@ -570,7 +581,7 @@ def inference(class_predictions, marker_predictions, three_d=False):
     predicted_foregound = (predicted_classes == 2).astype(np.uint8)
     labeled_markers, _ = get_cell_instances(marker_predictions.cpu().numpy(), marker=True, three_d=three_d)
 
-    labeled_preds = find_closest_marker_fmm(predicted_foregound, labeled_markers)
+    labeled_preds = find_closest_marker_fmm(predicted_foregound, labeled_markers, three_d)
     return labeled_preds
 
 def three_d_to_two_d_represantation(images):
@@ -650,12 +661,12 @@ def t_inference():
                         [0, 1, 0, 1, 0],
                         [0, 0, 0, 0, 0],
                         [0, 0, 0, 0, 0],
-                        [0, 1, 0, 0, 0]])
+                        [0, 0, 0, 0, 0]])
 
     pred = np.array([[0, 1, 1, 0, 0],
                      [2, 2, 1, 2, 0],
                      [1, 2, 1, 1, 0],
-                     [1, 2, 1, 1, 1],
+                     [1, 1, 1, 1, 1],
                      [2, 2, 2, 2, 1]],)
 
     pred, markers = torch.from_numpy(pred), torch.from_numpy(markers)
@@ -672,5 +683,5 @@ def t_shrink_cells():
     print(image)
 
 if __name__ == "__main__":
-    # t_inference()
-    t_shrink_cells()
+    t_inference()
+    # t_shrink_cells()

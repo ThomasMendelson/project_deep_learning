@@ -23,12 +23,12 @@ from utils import (
 # Hyperparameters
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-3
-L1_LAMBDA = 0  # 1e-5
+L1_LAMBDA = 1e-5
 
 BATCH_SIZE = 8
 NUM_EPOCHS = 200
 NUM_WORKERS = 4
-CLASS_WEIGHTS = [0.15, 0.6, 0.25]  # [0.2, 0.6, 0.2][0.1, 0.6, 0.3] [0.1, 0.7, 0.2]
+CLASS_WEIGHTS = [0.1, 0.7, 0.2]  # [0.15, 0.6, 0.25][0.2, 0.6, 0.2][0.1, 0.6, 0.3]
 MARKERS_WEIGHTS = [0.4, 0.6]
 
 PIN_MEMORY = False
@@ -38,6 +38,7 @@ WANDB_TRACKING = True
 CROP_SIZE = (32, 128, 128) #(32, 128, 128)  # (32, 256, 256)
 THREE_D = True
 THREE_D_BY_TWO_D = False
+
 RUNAI = False
 FREEZE_PRE_TRAINED = True
 
@@ -173,6 +174,7 @@ def main():
                        "L2_lambda": WEIGHT_DECAY,
                        "CE_weight": CLASS_WEIGHTS,
                        "img_size": CROP_SIZE,
+                       "freeze_pre_trained": FREEZE_PRE_TRAINED
                    })
         wandb_step = 0
     model = get_SwinUNETR_model(CROP_SIZE, DEVICE, PRETRAINED_DIR, FREEZE_PRE_TRAINED)
@@ -241,7 +243,7 @@ def main():
                                     three_d_by_two_d=THREE_D_BY_TWO_D)
             if (epoch + 1) != NUM_EPOCHS:
                 check_accuracy(test_check_accuracy_loader, model, num_image=50, device=DEVICE, three_d=THREE_D,
-                               three_d_by_two_d=THREE_D_BY_TWO_D)
+                               three_d_by_two_d=THREE_D_BY_TWO_D, save_path=SAVE_PATH, name=f"swin_{epoch}")
 
         if WANDB_TRACKING:
             wandb_step += 1

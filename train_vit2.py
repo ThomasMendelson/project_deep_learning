@@ -305,7 +305,7 @@ def main():
                                     three_d_by_two_d=THREE_D_BY_TWO_D)
             if (epoch + 1) != NUM_EPOCHS:
                 check_accuracy(test_check_accuracy_loader, model, num_image=50, device=DEVICE, three_d=THREE_D,
-                               three_d_by_two_d=THREE_D_BY_TWO_D)
+                               three_d_by_two_d=THREE_D_BY_TWO_D, save_path=SAVE_PATH, name=f"vit_{epoch}")
 
         if WANDB_TRACKING:
             wandb_step += 1
