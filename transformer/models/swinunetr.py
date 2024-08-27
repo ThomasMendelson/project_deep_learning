@@ -46,7 +46,7 @@ class CustomSwinUNETR(nn.Module):
         return x_class, x_marker
 
 
-def get_SwinUNETR_model(crop_size, device, pretrained_path, freeze_pre_trained):
+def get_SwinUNETR_model(crop_size, device, pretrained_path=None, freeze_pre_trained=True):
     model = CustomSwinUNETR(
         img_size=crop_size,
         in_channels=1,
@@ -56,26 +56,29 @@ def get_SwinUNETR_model(crop_size, device, pretrained_path, freeze_pre_trained):
 
     # Load the pre-trained weights
     # pretrained_path = r'C:\Users\beaviv\PycharmProjects\ImageProcessing\pre_trained_models\swin_unetr_btcv_segmentation\models\model.pt'
+    if pretrained_path is not None:
+        pretrained_dict = torch.load(pretrained_path, map_location=device)
 
-    pretrained_dict = torch.load(pretrained_path, map_location=device)
+        # Add the prefix 'swin_unetr.' to the keys in the pre-trained dictionary
+        pretrained_dict = {f'swin_unetr.{k}': v for k, v in pretrained_dict.items()}
 
-    # Get the state dict of the current model
-    model_dict = model.state_dict()
+        # Get the state dict of the current model
+        model_dict = model.state_dict()
 
-    # Filter out the keys with mismatched shapes
-    pretrained_dict = {k: v for k, v in pretrained_dict.items() if
-                       k in model_dict and v.shape == model_dict[k].shape}
+        # Filter out the keys with mismatched shapes
+        pretrained_dict = {k: v for k, v in pretrained_dict.items() if
+                           k in model_dict and v.shape == model_dict[k].shape}
 
 
-    # Update the current model's state dict
-    model_dict.update(pretrained_dict)
+        # Update the current model's state dict
+        model_dict.update(pretrained_dict)
 
-    # Load the updated state dict into the model
-    model.load_state_dict(model_dict)
+        # Load the updated state dict into the model
+        model.load_state_dict(model_dict)
 
-    if freeze_pre_trained:
-        for name, param in model.named_parameters():
-            if name in pretrained_dict:
-                param.requires_grad = False
+        if freeze_pre_trained:
+            for name, param in model.named_parameters():
+                if name in pretrained_dict:
+                    param.requires_grad = False
     return model
 

@@ -11,105 +11,12 @@ import skfmm
 from scipy.spatial import KDTree
 import time
 from scipy import ndimage
-
-DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
-WANDB_TRACKING = False
-
-# def plot_voxels_type1(voxels):
-#     """
-#     Plot 3D voxels where each voxel has three specific values (0: background, 1: edge, 2: interior).
-#     """
-#     # Create a figure to hold the scatter plot
-#     fig = go.Figure()
-#
-#     # Get the coordinates of the non-background voxels
-#     coords = torch.nonzero(voxels > 0, as_tuple=False)
-#     values = voxels[coords[:, 0], coords[:, 1], coords[:, 2]]
-#
-#     # Get the values of the non-background voxels
-#     colors = ['#000000', '#00FF00', '#FFFFFF']  # black for background, green for edge, white for interior
-#
-#     values = values.cpu().tolist()  # Convert tensor to numpy array
-#     color_map = [colors[val] for val in values]
-#
-#     # Create scatter plot
-#     fig.add_trace(go.Scatter3d(
-#         x=coords[:, 0].tolist(),
-#         y=coords[:, 1].tolist(),
-#         z=coords[:, 2].tolist(),
-#         mode='markers',
-#         marker=dict(size=2, color=color_map)
-#     ))
-#
-#     # Show the plot
-#     fig.show()
-#
-# def plot_voxels_type2(voxels):
-#     """
-#     Plot 3D voxels where each non-background voxel can have a different color.
-#     """
-#     # Create a figure to hold the scatter plot
-#     fig = go.Figure()
-#
-#     # Get the coordinates of the non-background voxels
-#     coords = torch.nonzero(voxels > 0, as_tuple=False)
-#
-#     # Get the values of the non-background voxels
-#     values = voxels[coords[:, 0], coords[:, 1], coords[:, 2]]
-#
-#     # Normalize the values for color mapping
-#     norm_values = (values - values.min()) / (values.max() - values.min())
-#
-#     # Create scatter plot
-#     fig.add_trace(go.Scatter3d(
-#         x=coords[:, 0].tolist(),
-#         y=coords[:, 1].tolist(),
-#         z=coords[:, 2].tolist(),
-#         mode='markers',
-#         marker=dict(size=2, color=norm_values.tolist(), colorscale='Viridis')
-#     ))
-#
-#     # Show the plot
-#     fig.show()
-#
-#
-def detect_edges(mask, threshold=0.25):
-    # Compute the gradients along rows and columns
-    gradient_x = torch.gradient(mask, dim=2)[0]
-    gradient_y = torch.gradient(mask, dim=1)[0]
-    gradient_z = torch.gradient(mask, dim=0)[0]
-
-    gradient_magnitude = torch.sqrt(gradient_x ** 2 + gradient_y ** 2 + gradient_z ** 2)
-    masked_gradient_magnitude = gradient_magnitude * mask
-    edge_mask = (masked_gradient_magnitude > threshold).to(torch.int)
-
-    return edge_mask
-
-def split_mask(mask):
-    # mask: torch.Size([batch, D, H, W])
-    three_classes_mask = torch.zeros_like(mask, dtype=torch.int32)
-    for batch_idx in range(mask.size()[0]):
-        unique_elements = torch.unique(mask[batch_idx].flatten())
-        for element in unique_elements:
-            if element != 0:
-                element_mask = (mask[batch_idx] == element).to(torch.int)
-                edges = detect_edges(element_mask)
-                element_mask -= edges
-                three_classes_mask[batch_idx][edges == 1] = 1         # edge
-                three_classes_mask[batch_idx][element_mask == 1] = 2  # interior
-
-    return three_classes_mask
-
-
-
-
-
-
-
-
-
-
-
+import os
+from PIL import Image
+import numpy as np
+from scipy.ndimage import label, binary_erosion
+DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
+WANDB_TRACKING = True
 
 def detect_edges2d(mask, threshold=0.25):
     # Compute the gradients along rows and columns
@@ -125,7 +32,6 @@ def detect_edges2d(mask, threshold=0.25):
     edge_mask = (masked_gradient_magnitude > threshold).to(torch.int)
 
     return edge_mask
-
 def split_mask2d(mask):
     three_classes_mask = torch.zeros_like(mask, dtype=torch.int32)
     for batch_idx in range(mask.size()[0]):
@@ -139,98 +45,8 @@ def split_mask2d(mask):
                 three_classes_mask[batch_idx][element_mask == 1] = 2
 
     return three_classes_mask
-#
-# def visualize_3d_image_from_classes(input_tensor, save_path):
-#     image_np = input_tensor.cpu().numpy()
-#     print(f"image_np.shape: {image_np.shape}")
-#
-#     x, y, z = np.indices(image_np.shape)
-#     x, y, z = x[image_np > 0], y[image_np > 0], z[image_np > 0]  # Get indices where the voxel value is not zero
-#     values = image_np[image_np > 0]  # Get voxel values that are not zero
-#
-#     colors = np.where(values == 1, 'green', 'red')
-#
-#     # Create 3D scatter plot
-#     fig = go.Figure(data=[
-#         go.Scatter3d(
-#             x=x.flatten(),
-#             y=y.flatten(),
-#             z=z.flatten(),
-#             mode='markers',
-#             marker=dict(
-#                 size=5,
-#                 color=colors,  # Color by voxel value
-#                 opacity=0.2
-#             )
-#         )
-#     ])
-#
-#     # Update layout for better visualization
-#     fig.update_layout(scene=dict(
-#         xaxis=dict(nticks=4, range=[0, image_np.shape[0]]),
-#         yaxis=dict(nticks=4, range=[0, image_np.shape[1]]),
-#         zaxis=dict(nticks=4, range=[0, image_np.shape[2]]),
-#         aspectratio=dict(x=1, y=1, z=1)
-#     ))
-#     # Save the figure to a temporary file
-#     fig.write_html(save_path)
-#     if WANDB_TRACKING:
-#         table = wandb.Table(columns=["plotly_figure"])
-#         table.add_data(wandb.Html(save_path))
-#         # Log the image to wandb
-#         wandb.log({os.path.basename(save_path): table})
-#
-# def visualize_3d_image_instances(input_tensor, save_path):
-#     image_np = input_tensor.cpu().numpy()
-#
-#     # Get indices and values where the voxel value is not zero
-#     x, y, z = np.indices(image_np.shape)
-#     x, y, z = x[image_np > 0], y[image_np > 0], z[image_np > 0]
-#     values = image_np[image_np > 0]
-#
-#     # Get unique class labels
-#     unique_classes = np.unique(values)
-#
-#     # Generate a color for each unique class
-#     class_colors = {
-#         cls: f'rgb({int(cls*80) % 256}, {int(cls*50) % 256}, {int(cls*100) % 256})'
-#         for cls in unique_classes
-#     }
-#
-#     # Assign colors based on class labels
-#     colors = np.array([class_colors[val] for val in values])
-#
-#     # Create 3D scatter plot
-#     fig = go.Figure(data=[
-#         go.Scatter3d(
-#             x=x.flatten(),
-#             y=y.flatten(),
-#             z=z.flatten(),
-#             mode='markers',
-#             marker=dict(
-#                 size=5,
-#                 color=colors,  # Color by class value
-#                 opacity=0.2
-#             )
-#         )
-#     ])
-#
-#     # Update layout for better visualization
-#     fig.update_layout(scene=dict(
-#         xaxis=dict(nticks=4, range=[0, image_np.shape[0]]),
-#         yaxis=dict(nticks=4, range=[0, image_np.shape[1]]),
-#         zaxis=dict(nticks=4, range=[0, image_np.shape[2]]),
-#         aspectratio=dict(x=1, y=1, z=1)
-#     ))
-#
-#     # Save the figure to a temporary file
-#     fig.write_html(save_path)
-#
-#     # Optionally log to Weights & Biases
-#     if 'WANDB_TRACKING' in globals() and WANDB_TRACKING:
-#         table = wandb.Table(columns=["plotly_figure"])
-#         table.add_data(wandb.Html(save_path))
-#         wandb.log({os.path.basename(save_path): table})
+
+
 def random_crop(image, crop_size=(32,128,128) , num_crops=10, threshold=500):
     depth, height, width = image.shape[-3:]
     crop_depth, crop_height, crop_width = crop_size
@@ -289,36 +105,6 @@ def get_cell_instances(input_np, marker=False,  three_d=False):
         foreground_mask = (input_np == 2).astype(np.uint8)
     labeled, max_num = ndimage.label(foreground_mask, structure=strel)
     return labeled, max_num
-#
-# if WANDB_TRACKING:
-#     wandb.login(key="12b9b358323faf2af56dc288334e6247c1e8bc63")
-#     wandb.init(project="seg_unet_3D")
-# # Save path for the plot
-# save_path1 = '3d_image1.html'
-# save_path2 = '3d_image2.html'
-#
-# # Visualize and save the 3D image
-#
-#
-# mask_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG/man_seg070.tif"
-# tra_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/TRA/man_track070.tif"
-# # voxels_type2 = torch.from_numpy(tiff.imread(mask_path).astype(np.float32)).to(DEVICE).unsqueeze(0)  # every cell have different value
-# # voxels_type2 = random_crop(voxels_type2)
-# # voxels_type1 = split_mask(voxels_type2).to(DEVICE)  # 0/1/2
-# # print("going to visualize_3d_image")
-# # visualize_3d_image_from_classes(voxels_type1[0], save_path1)
-# #
-# # visualize_3d_image_instances(voxels_type2[0], save_path2)
-# image = tiff.imread(tra_path)
-# d, h, w = image.shape
-# image[image > 0] = 1
-#
-# plt.imshow(image[d//2], cmap='gray')  # Use 'gray' colormap for grayscale images
-# plt.title('Middle Slice')
-# plt.axis('off')  # Turn off axis labels
-# plt.show()
-# if WANDB_TRACKING:
-#     wandb.finish()
 
 
 def inference(class_predictions, marker_predictions, three_d=False):
@@ -444,10 +230,7 @@ def t_inference():
     # print("result2", labeled_preds_tree)
 
 
-import os
-from PIL import Image
-import numpy as np
-from scipy.ndimage import label, binary_erosion
+
 
 def save_shrink_images_to_new_dir():
     # Define the source and target directories
@@ -489,7 +272,6 @@ def save_shrink_images_to_new_dir():
 
         print(f"shrunk_array.shape: {shrunk_array.shape}")
         return shrunk_array
-
 
     # Loop through all files in the source directory
     for filename in os.listdir(source_dir):
@@ -589,11 +371,185 @@ def t_2_to_3_and_back():
     else:
         print("The reconstructed image does not match the original image.")
 
+
+def detect_edges(mask, threshold=0.25):
+    inverted_mask = 1 - mask
+    # Compute the gradients along rows and columns
+    gradient_x = torch.gradient(mask, dim=2)[0]
+    gradient_y = torch.gradient(mask, dim=1)[0]
+    gradient_z = torch.gradient(mask, dim=0)[0]
+
+    gradient_magnitude = torch.sqrt(gradient_x ** 2 + gradient_y ** 2 + gradient_z ** 2)
+    # masked_gradient_magnitude = gradient_magnitude * mask
+    masked_gradient_magnitude = gradient_magnitude * inverted_mask
+
+    edge_mask = (masked_gradient_magnitude > threshold).to(torch.int)
+
+    return edge_mask
+
+def split_mask(mask):
+    # mask: torch.Size([batch, D, H, W])
+    three_classes_mask = torch.zeros_like(mask, dtype=torch.int32)
+    for batch_idx in range(mask.size()[0]):
+        unique_elements = torch.unique(mask[batch_idx].flatten())
+        for element in unique_elements:
+            if element != 0:
+                element_mask = (mask[batch_idx] == element).to(torch.int)
+                edges = detect_edges(element_mask)
+                element_mask -= edges
+                three_classes_mask[batch_idx][edges == 1] = 1         # edge
+                three_classes_mask[batch_idx][element_mask == 1] = 2  # interior
+
+    return three_classes_mask
+
+def detect_edges2(mask, dilation_layers=0, threshold=0.25):
+    inverted_mask = 1 - mask
+    # Compute the gradients along rows and columns
+    gradient_x = torch.gradient(mask, dim=2)[0]
+    gradient_y = torch.gradient(mask, dim=1)[0]
+    gradient_z = torch.gradient(mask, dim=0)[0]
+
+    gradient_magnitude = torch.sqrt(gradient_x ** 2 + gradient_y ** 2 + gradient_z ** 2)
+    # masked_gradient_magnitude = gradient_magnitude * mask
+    masked_gradient_magnitude = gradient_magnitude * inverted_mask
+    edge_mask = (masked_gradient_magnitude > threshold).to(torch.int)
+    edge_mask = edge_mask.unsqueeze(0)
+    if dilation_layers > 0:
+        kernel_size = dilation_layers * 2 + 1
+        kernel = torch.ones((1, 1, kernel_size, kernel_size, kernel_size), dtype=torch.float32, device=mask.device)
+        edge_mask = torch.nn.functional.conv3d(edge_mask.unsqueeze(1).float(), kernel, padding=dilation_layers)
+        edge_mask = (edge_mask > 0).to(torch.int)
+    edge_mask = edge_mask.squeeze(0).squeeze(0)
+    return edge_mask
+
+def split_mask2(mask, dilation_layers):
+    # mask: torch.Size([batch, D, H, W])
+    three_classes_mask = torch.zeros_like(mask, dtype=torch.int32)
+    for batch_idx in range(mask.size()[0]):
+        unique_elements = torch.unique(mask[batch_idx].flatten())
+        for element in unique_elements:
+            if element != 0:
+                element_mask = (mask[batch_idx] == element).to(torch.int)
+                edges = detect_edges2(element_mask, dilation_layers)
+                element_mask -= edges
+                three_classes_mask[batch_idx][edges == 1] = 1         # edge
+                three_classes_mask[batch_idx][element_mask == 1] = 2  # interior
+
+    return three_classes_mask
+
+def t_watermalon():
+    save_path = "watermalon.html"
+    if WANDB_TRACKING:
+        wandb.login(key="12b9b358323faf2af56dc288334e6247c1e8bc63")
+        wandb.init(project="seg_unet_3D")
+    # Define the size of the 3D grid
+    grid_size = (32, 128, 128)
+
+    center1 = np.array([32, 100, 75])  # x=0 is on the edge
+    radius1 = 4
+
+    center2 = np.array([15, 95, 35])  # x=0 is on the edge
+    radius2 = 5
+
+    x, y, z = np.ogrid[:grid_size[0], :grid_size[1], :grid_size[2]]
+
+    squared_distances1 = (x - center1[0]) ** 2 + (y - center1[1]) ** 2 + (z - center1[2]) ** 2
+    squared_distances2 = (x - center2[0]) ** 2 + (y - center2[1]) ** 2 + (z - center2[2]) ** 2
+
+    ball1 = squared_distances1 <= radius1 ** 2
+    ball2 = squared_distances2 <= radius2 ** 2
+    ball_array1 = ball1.astype(int)
+    ball_array2 = ball2.astype(int)
+    image = ball_array1 | ball_array2
+    print(image.shape)
+
+    x, y, z = np.indices(image.shape)
+    x, y, z = x[image > 0], y[image > 0], z[image > 0]
+    values = image[image > 0]
+
+    # Get unique class labels
+    unique_classes = np.unique(values)
+
+    # Generate a color for each unique class
+    class_colors = {
+        cls: f'rgb({0}, {0}, {0})'
+        for cls in unique_classes
+    }
+
+    # Assign colors based on class labels
+    colors = np.array([class_colors[val] for val in values])
+
+    # Create 3D scatter plot
+    fig = go.Figure(data=[
+        go.Scatter3d(
+            x=x.flatten(),
+            y=y.flatten(),
+            z=z.flatten(),
+            mode='markers',
+            marker=dict(
+                size=5,
+                color=colors,  # Color by class value
+                opacity=0.2
+            )
+        )
+    ])
+
+    # Update layout for better visualization
+    fig.update_layout(scene=dict(
+        xaxis=dict(nticks=4, range=[0, image.shape[0]]),
+        yaxis=dict(nticks=4, range=[0, image.shape[1]]),
+        zaxis=dict(nticks=4, range=[0, image.shape[2]]),
+        aspectratio=dict(x=1, y=1, z=1)
+    ))
+
+    # Save the figure to a temporary file
+    fig.write_html(save_path)
+
+    # Optionally log to Weights & Biases
+    if WANDB_TRACKING:
+        table = wandb.Table(columns=["plotly_figure"])
+        table.add_data(wandb.Html(save_path))
+        wandb.log({os.path.basename(save_path): table})
+
+
 if __name__ == "__main__":
+    seg_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG/man_seg070.tif"
+    seg_path2 = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG/man_seg071.tif"
+    # tra_path = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/TRA/man_track070.tif"
+    # voxels_type2 = torch.from_numpy(tiff.imread(mask_path).astype(np.float32)).to(DEVICE).unsqueeze(0)  # every cell have different value
+    seg_img = torch.from_numpy(tiff.imread(seg_path).astype(np.float32)).to(DEVICE).unsqueeze(0)
+    seg_img2 = torch.from_numpy(tiff.imread(seg_path2).astype(np.float32)).to(DEVICE).unsqueeze(0)
+    # seg_img = torch.cat((seg_img, seg_img2), 0)
+    print(seg_img.shape)
+    d = seg_img.shape[-3]
+    edge_image1 = split_mask(seg_img).cpu().numpy()
+
+    edge_image2 = split_mask2(seg_img, 1).cpu().numpy()
+
+    ffig, axs = plt.subplots(1, 3, figsize=(15, 5))
+    axs[0].imshow(seg_img[0, d//2].cpu(), cmap='gray')
+    axs[0].set_title('Middle Slice of Original image')
+    axs[0].axis('off')  # Hide the axes
+    axs[2].imshow(edge_image2[0, d//2], cmap='gray')
+    axs[2].set_title('Middle Slice  3 classes')
+    axs[2].axis('off')  # Hide the axes
+    axs[1].imshow((edge_image2[0, d//2] == 1), cmap='gray')
+    axs[1].set_title('Middle Slice  Edges')
+    axs[1].axis('off')  # Hide the axes
+
+    plt.tight_layout()
+    # plt.show()
+    plt.savefig(f"middle_slices.png")
+    # image = (edge_image1[0, d//2] == 0) & ~(edge_image2[0, d//2] == 0)
+    # plt.imshow(image, cmap='gray')
+    # plt.show()
+
+    # t_watermalon()
+
     # save_shrink_images_to_new_dir()
     # t_save_shrink_images_to_new_dir(False)
 #     t_inference()
-    t_2_to_3_and_back()
+#     t_2_to_3_and_back()
 
 
 

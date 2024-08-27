@@ -3,15 +3,13 @@ import torch
 import wandb
 import skfmm
 from scipy.spatial import KDTree
+import tifffile as tiff
 import time
-import torchvision
 from PIL import Image
 import numpy as np
 from scipy.ndimage import label, binary_erosion
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 import torch.nn.functional as F
-import torchvision.utils as vutils
 from tqdm import tqdm
 from dataset import Dataset
 from dataset3D import Dataset3D
@@ -28,8 +26,11 @@ def save_checkpoint(state, filename="my_checkpoint.pth.tar"):
 #     print("=> Loading checkpoint")
 #     model.load_state_dict(checkpoint["state_dict"])
 def load_checkpoint(checkpoint, model):
+    # print("Checkpoint loaded, type:", type(checkpoint))
     try:
         print("=> Loading checkpoint")
+        # print("Checkpoint keys:", checkpoint.keys())
+
         # checkpoint = torch.load(checkpoint_path, map_location=torch.device(DEVICE))
         model.load_state_dict(checkpoint["state_dict"])
         print("=> Checkpoint loaded successfully")
@@ -142,7 +143,10 @@ def check_accuracy(loader, model, device="cuda", num_image=None, three_d=False, 
                         print(f"seg score for {num_image} image: {seg_score}")
                         model.train()
                         if save_path is not None and (seg_score >= 0.58):
-                            save_checkpoint(model, filename=f"{save_path}{name}_{seg_score:.4f}.pth.tar")
+                            checkpoint = {
+                                "state_dict": model.state_dict(),
+                            }
+                            save_checkpoint(checkpoint, filename=f"{save_path}{name}_{seg_score:.4f}.pth.tar")
                         return
 
     print(f"seg score: {seg / num_iters}")
@@ -653,6 +657,36 @@ def shrink_cells(input, num_layers_to_shrink, three_d):
 
     return shrunk_tensor
 
+
+def save_images_to_check_accuracy(loader, model, save_path, device, three_d, three_d_by_two_d):
+    print("=> Checking accuracy")
+    counter = 0
+    loader = tqdm(loader)
+    model.eval()
+    with torch.no_grad():
+        for data, class_targets, marker_targets in loader:
+            if three_d and three_d_by_two_d:
+                depth = data.shape[-3]
+                batch_size = data.shape[0]
+                data = three_d_to_two_d_represantation(data)
+            class_predictions, marker_predictions = model(data.to(device))
+            if three_d and three_d_by_two_d:
+                class_predictions = two_d_to_three_d_represantation(images=class_predictions,
+                                                                    batch_size=batch_size, depth=depth)
+                marker_predictions = two_d_to_three_d_represantation(images=marker_predictions,
+                                                                     batch_size=batch_size,
+                                                                     depth=depth)
+            predicted_classes = predict_classes(class_predictions)
+            # marker_predictions = predict_classes(marker_predictions)
+            marker_predictions = (torch.sigmoid(marker_predictions) > 0.5).int().squeeze(1)
+
+            gt = class_targets.numpy().astype(np.uint16)
+            for i in range(predicted_classes.shape[0]):
+                if torch.any(class_predictions > 0):
+                    pred_labels_mask = inference(predicted_classes[i], marker_predictions[i], three_d=three_d).astype(np.uint16)
+                    tiff.imwrite(f"{save_path}01_RES/mask{counter:03}.tif", pred_labels_mask, dtype=np.uint16)
+                    tiff.imwrite(f"{save_path}01_GT/SEG/man_seg{counter:03}.tif", gt[i], dtype=np.uint16)
+                    counter +=1
 
 def t_inference():
     markers = np.array([[0, 0, 0, 0, 0],

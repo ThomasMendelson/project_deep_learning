@@ -37,15 +37,25 @@ class Dataset3D(Dataset):
             return image, seg_mask, tra_mask
 
     @staticmethod
-    def detect_edges(mask, threshold=0.25):
+    def detect_edges(mask, dilation_layers=0, threshold=0.25):
+        inverted_mask = 1 - mask
         # Compute the gradients along rows and columns
         gradient_x = torch.gradient(mask, dim=2)[0]
         gradient_y = torch.gradient(mask, dim=1)[0]
         gradient_z = torch.gradient(mask, dim=0)[0]
 
         gradient_magnitude = torch.sqrt(gradient_x ** 2 + gradient_y ** 2 + gradient_z ** 2)
-        masked_gradient_magnitude = gradient_magnitude * mask
+        # masked_gradient_magnitude = gradient_magnitude * mask  # the edge is inside the cell
+        masked_gradient_magnitude = gradient_magnitude * inverted_mask  # the edge outside the cell
         edge_mask = (masked_gradient_magnitude > threshold).to(torch.int)
+
+        edge_mask = edge_mask.unsqueeze(0)
+        if dilation_layers > 0:
+            kernel_size = dilation_layers * 2 + 1
+            kernel = torch.ones((1, 1, kernel_size, kernel_size, kernel_size), dtype=torch.float32, device=mask.device)
+            edge_mask = torch.nn.functional.conv3d(edge_mask.unsqueeze(1).float(), kernel, padding=dilation_layers)
+            edge_mask = (edge_mask > 0).to(torch.int)
+        edge_mask = edge_mask.squeeze(0).squeeze(0)
 
         return edge_mask
 
@@ -58,7 +68,7 @@ class Dataset3D(Dataset):
             for element in unique_elements:
                 if element != 0:
                     element_mask = (mask[batch_idx] == element).to(torch.int)
-                    edges = Dataset3D.detect_edges(element_mask)
+                    edges = Dataset3D.detect_edges(mask=element_mask, dilation_layers=0)
                     element_mask -= edges
                     three_classes_mask[batch_idx][edges == 1] = 1         # edge
                     three_classes_mask[batch_idx][element_mask == 1] = 2  # interior
@@ -264,17 +274,17 @@ def get_transform(train_aug=True):
         image_d = image.shape[0]
         subj = to_tensor(image, seg_mask, tra_mask)
         if train_aug:
-            # subj = affine(subj, p=1, max_degrees=15, max_scale=0.2, translation=5)
+            subj = affine(subj, p=1, max_degrees=10, max_scale=0.2, translation=5)
             # subj = elastic_deformation(subj, num_control_points=6, locked_borders=2, p=1)
-            # subj = horizontal_flip(subj, p=1)
-            # subj = vertical_flip(subj, p=1)
-            # subj = depth_flip(subj, p=1)
-            # image, seg_mask, tra_mask = random_crop(subj, crop_size=(image_d, 256, 256))
-            image = subj.image.tensor
-            seg_mask = subj.seg_mask.tensor
-            tra_mask = subj.tra_mask.tensor
-            # image = random_gamma(image, max_gamma=0.3, p=1)
-            image = random_noise(image, std=0.5, p=1)
+            subj = horizontal_flip(subj, p=1)
+            subj = vertical_flip(subj, p=1)
+            subj = depth_flip(subj, p=1)
+            image, seg_mask, tra_mask = random_crop(subj, crop_size=(image_d, 256, 256))
+            # image = subj.image.tensor
+            # seg_mask = subj.seg_mask.tensor
+            # tra_mask = subj.tra_mask.tensor
+            image = random_gamma(image, max_gamma=0.3, p=1)
+            # image = random_noise(image, std=0.5, p=1)
 
         else:
             image, seg_mask, tra_mask = random_crop(subj, crop_size=(32, 256, 256))
@@ -346,10 +356,10 @@ def t_transform():
     axs[0, 1].set_title(f"original mask middle slice")
     axs[0, 1].axis('off')  # Hide the axes
     axs[1, 0].imshow(tras_image[0, image_middle_index], cmap='gray')
-    axs[1, 0].set_title(f"random noise image middle slice")
+    axs[1, 0].set_title(f"all augmentations image middle slice")
     axs[1, 0].axis('off')  # Hide the axes
     axs[1, 1].imshow(tras_mask[image_middle_index], cmap='gray')
-    axs[1, 1].set_title(f"random noise mask middle slice")
+    axs[1, 1].set_title(f"all augmentations mask middle slice")
     axs[1, 1].axis('off')  # Hide the axes
 
     # Adjust spacing between plots

@@ -18,6 +18,7 @@ from utils import (
     check_accuracy,
     check_accuracy_multy_models,
     save_instance_by_colors,
+    save_images_to_check_accuracy,
 )
 
 # Hyperparameters
@@ -29,18 +30,18 @@ BATCH_SIZE = 8
 NUM_EPOCHS = 200
 NUM_WORKERS = 4
 CLASS_WEIGHTS = [0.1, 0.7, 0.2]  # [0.15, 0.6, 0.25][0.2, 0.6, 0.2][0.1, 0.6, 0.3]
-MARKERS_WEIGHTS = [0.4, 0.6]
+MARKERS_WEIGHTS = [1.5]
 
 PIN_MEMORY = False
 LOAD_MODEL = False
 WANDB_TRACKING = True
 
-CROP_SIZE = (32, 128, 128) #(32, 128, 128)  # (32, 256, 256)
+CROP_SIZE = (32, 128, 128)  # (32, 128, 128)  # (32, 256, 256)
 THREE_D = True
 THREE_D_BY_TWO_D = False
 
-RUNAI = False
-FREEZE_PRE_TRAINED = True
+RUNAI = True
+FREEZE_PRE_TRAINED = False
 
 if RUNAI:
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -52,7 +53,7 @@ if RUNAI:
     VAL_MASK_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/01_GT/SEG"
     VAL_TRA_DIR = "/gpfs0/tamyr/projects/data/CellTrackingChallenge/Fluo-N3DH-SIM+/01_GT/TRA2"
 else:
-    DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
+    DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
     SAVE_PATH = "/raid/data/users/thomasm/ckpts/"
     TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02"
     TRAIN_SEG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02_GT/SEG"
@@ -61,6 +62,7 @@ else:
     VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG"
     VAL_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/TRA2"
 PRETRAINED_DIR = f"{SAVE_PATH}pretrained_swinunetr.pt"
+
 
 def calculate_l1_loss(model):
     l1_loss = sum(torch.sum(torch.abs(param)) for param in model.parameters())
@@ -183,19 +185,20 @@ def main():
     markers_weights = torch.FloatTensor(MARKERS_WEIGHTS).to(DEVICE)
 
     # CrossEntropyLoss
-    # criterion = [nn.CrossEntropyLoss(weight=class_weights)]  # , nn.BCEWithLogitsLoss()]
+    # criterion = [nn.CrossEntropyLoss(weight=class_weights), nn.BCEWithLogitsLoss(pos_weight=markers_weights)]
     # DiceCELoss
     criterion = [DiceCELoss(softmax=True, squared_pred=True, weight=class_weights),
                  # in reference was , batch=True)
-                 nn.BCEWithLogitsLoss()]
+                 nn.BCEWithLogitsLoss(pos_weight=markers_weights)]
     # FocalLoss
     # criterion = [FocalLoss(softmax=True, squared_pred=True, gamma=2, alpha=class_weights),
-    #              nn.BCEWithLogitsLoss()]
+    #              nn.BCEWithLogitsLoss(pos_weight=markers_weights)]
     # DiceFocalLoss
     # criterion = [DiceFocalLoss(softmax=True, squared_pred=True, weight=class_weights, gamma=2),
-    #              nn.BCEWithLogitsLoss()]
+    #              nn.BCEWithLogitsLoss(pos_weight=markers_weights)]
 
-    optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+    optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=LEARNING_RATE,
+                            weight_decay=WEIGHT_DECAY)
     scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=5, min_lr=1e-6)
 
     train_loader = get_loader(dir=TRAIN_IMG_DIR, seg_dir=TRAIN_SEG_DIR, tra_dir=TRAIN_TRA_DIR, train_aug=True,
@@ -212,7 +215,8 @@ def main():
                                             pin_memory=PIN_MEMORY, three_d=THREE_D, device=DEVICE)
 
     if LOAD_MODEL:
-        load_checkpoint(torch.load(f"{SAVE_PATH}swinunetr_checkpoint.pth.tar", map_location=torch.device(DEVICE)), model)
+        load_checkpoint(torch.load(f"{SAVE_PATH}swinunetr_checkpoint.pth.tar", map_location=torch.device(DEVICE)),
+                        model)
         model.to(DEVICE)
         check_accuracy(val_loader, model, device=DEVICE, three_d=THREE_D, three_d_by_two_d=THREE_D_BY_TWO_D)
 
@@ -264,14 +268,22 @@ def main():
 
 def t_acc():
     model = get_SwinUNETR_model(CROP_SIZE, DEVICE, PRETRAINED_DIR)
-    load_checkpoint(torch.load("checkpoint/swinunetr.pth.tar", map_location=torch.device(DEVICE)), model)
-
+    # # load_checkpoint(torch.load(f"{SAVE_PATH}swin_189_0.5927.pth.tar", map_location=torch.device(DEVICE)), model)
+    # pretrained_weights = torch.load(f"{SAVE_PATH}swin_189_0.5927.pth.tar", map_location=torch.device(DEVICE))
+    # model.load_state_dict(pretrained_weights)
+    model = torch.load(f"{SAVE_PATH}vit_109_0.6555.pth.tar", map_location=torch.device(DEVICE)).to(DEVICE)
     test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, seg_dir=VAL_MASK_DIR, tra_dir=VAL_TRA_DIR, train_aug=False,
                                             shuffle=False, batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
                                             pin_memory=PIN_MEMORY, three_d=THREE_D, device=DEVICE)
 
-    # check_accuracy_multy_models(test_check_accuracy_loader, [model], device=DEVICE, three_d=THREE_D)
+    train_accuracy_loader = get_loader(dir=TRAIN_IMG_DIR, seg_dir=TRAIN_SEG_DIR, tra_dir=TRAIN_TRA_DIR, train_aug=False,
+                                            shuffle=False, batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
+                                            pin_memory=PIN_MEMORY, three_d=THREE_D, device=DEVICE)
 
+    # check_accuracy_multy_models(test_check_accuracy_loader, [model], device=DEVICE, three_d=THREE_D)
+    # save_images_to_check_accuracy(test_check_accuracy_loader, model, save_path=f"{SAVE_PATH}/Fluo-N3DH-SIM+/",
+    #                               device=DEVICE, three_d=THREE_D, three_d_by_two_d=THREE_D_BY_TWO_D)
+    check_accuracy(train_accuracy_loader, model, device=DEVICE, num_image=None, three_d=THREE_D)
     check_accuracy(test_check_accuracy_loader, model, device=DEVICE, num_image=None, three_d=THREE_D)
 
     # save_slices(test_check_accuracy_loader, model, device=DEVICE, three_d=THREE_D)
@@ -297,7 +309,7 @@ def t_acc():
 #     check_accuracy_multy_models(test_check_accuracy_loader, [model, model1, model2], device=DEVICE, one_image=False)
 
 if __name__ == "__main__":
-    main()
-    # t_acc()
+    # main()
+    t_acc()
     # t_acc_mul_models()
     # t_save_instance_by_colors()
