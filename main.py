@@ -8,9 +8,9 @@ if __name__ == "__main__":
     parser.add_argument("-m", "--model", type=str, help="model type to train")
     args = parser.parse_args()
 
-    if args.model == "ViT_UNet":
+    if args.model == "vit_unet":
         vit_unet()
-    elif args.model == "SwinUNETR":
+    elif args.model == "swinunetr":
         swin_unetr()
     elif args.model == "unet":
         unet()
