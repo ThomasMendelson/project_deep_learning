@@ -30,7 +30,7 @@ Hatamizadeh, A., et al. (2021). *UNETR: Transformers for 3D Medical Image Segmen
 
 ## Directory Structure
 - **models/**: Contains the code for the implemented models.
-- **dataset/** and **dataset3D/**: Include functions for loading and preprocessing data, as well as utilities for creating data loaders.
+- **dataset/** and **dataset3D/** and **utils.py**: Include functions for loading and preprocessing data, as well as utilities for creating data loaders.
 - **train3D.py, train_swin.py, train_vit2.py**: Scripts for training different models. Each script allows training with specific configurations suited to the corresponding architecture.
 - **main.py**: The main script where you can select which model to train and define key parameters.
 
@@ -46,11 +46,11 @@ Hatamizadeh, A., et al. (2021). *UNETR: Transformers for 3D Medical Image Segmen
    - Use the `main.py` to choose which model to train and set additional options for your experiments.
    - Example command:
      ```bash
-     python main.py --model vit_unet --epochs 50 --batch_size 4
+     python main.py --model vit_unet
      ```
 
 4. **Evaluate and Analyze:**
-   - After training, use the saved models to perform evaluation and generate segmentation results. Evaluate the performance using both qualitative and quantitative metrics, such as Dice Similarity Coefficient and Hausdorff Distance.
+   - After training, use the saved models to perform evaluation with **check_accuray** function in **utils.py** and generate segmentation results. 
 
 ## Additional Notes
 - Ensure all dependencies are installed, preferably in a virtual environment or using Docker for consistency.
