@@ -15,7 +15,8 @@ We used the [Fluo-N3DH-SIM+ dataset](https://celltrackingchallenge.net/3d-datase
 ## Model Architecture
 Our architecture is inspired by the UNETR model proposed in the paper *"UNETR: Transformers for 3D Medical Image Segmentation"* by Hatamizadeh et al. The model combines Vision Transformers (ViTs) with a U-Net-like structure to leverage both global context and local spatial information, making it well-suited for the complex task of cell segmentation in 3D images.
 
-![Architecture Diagram](architecture%20image.jpg)
+![Architecture Diagram](architecture%20image.png)
+
 
 The key components of our architecture include:
 - ** Vision Transformer:** Processes the input image using multi-head self-attention to capture long-range dependencies.
