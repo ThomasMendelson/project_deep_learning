@@ -68,7 +68,7 @@ class Dataset3D(Dataset):
             for element in unique_elements:
                 if element != 0:
                     element_mask = (mask[batch_idx] == element).to(torch.int)
-                    edges = Dataset3D.detect_edges(mask=element_mask, dilation_layers=0)
+                    edges = Dataset3D.detect_edges(mask=element_mask, dilation_layers=1)
                     element_mask -= edges
                     three_classes_mask[batch_idx][edges == 1] = 1         # edge
                     three_classes_mask[batch_idx][element_mask == 1] = 2  # interior
@@ -180,7 +180,7 @@ class Dataset3D(Dataset):
 
         return transform
 
-
+################################### for tests ####################################################
 
 def get_transform(train_aug=True):
     def affine(subj, p=0.5, max_degrees=15, max_scale=0.2, translation=5):

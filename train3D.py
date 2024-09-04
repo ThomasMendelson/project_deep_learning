@@ -3,16 +3,12 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import wandb
-import numpy as np
 from tqdm import tqdm
-from PIL import Image
 import torch.nn.functional as F
 from monai.losses import DiceCELoss, FocalLoss, DiceFocalLoss
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-# import albumentations as A
-from model3D import UNET3D
-from model3D_2 import UNet3D as UNet3D_2
+from models.unet.model3D import UNET3D
 from dataset3D import Dataset3D
 
 
@@ -21,16 +17,13 @@ from utils import (
     save_checkpoint,
     get_loader,
     check_accuracy,
-    check_accuracy_multy_models,
-    # save_predictions_as_imgs,
     save_instance_by_colors,
-    apply_color_map,
 )
 
 # Hyperparameters
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-3
-L1_LAMBDA = 1e-5
+L1_LAMBDA = 0 # 1e-5
 DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 4
 NUM_EPOCHS = 100
@@ -39,7 +32,7 @@ CROP_SIZE = (32, 256, 256)
 CLASS_WEIGHTS = [0.2, 0.6, 0.2]  # [0.15, 0.6, 0.25]  # [0.1, 0.6, 0.3] [0.1, 0.7, 0.2]
 PIN_MEMORY = False
 LOAD_MODEL = False
-WANDB_TRACKING = True
+WANDB_TRACKING = False
 THREE_D = True
 # 3D
 TRAIN_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/02"
@@ -148,7 +141,7 @@ def evaluate_fn(loader, model, loss_functions):
 
 def main():
     if WANDB_TRACKING:
-        wandb.login(key="12b9b358323faf2af56dc288334e6247c1e8bc63")
+        wandb.login(key="")
         wandb.init(project="seg_unet_3D",
                    config={
                        "epochs": NUM_EPOCHS,

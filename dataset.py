@@ -138,21 +138,6 @@ class Dataset(Dataset):
 
             return tensor_images, tensor_seg_masks, tensor_tra_masks
 
-        def val_to_tensor(image, seg_mask, tra_mask):
-            # Convert  images and masks to PyTorch tensors (1, 1, H, W)
-            # input (H, W)
-            if len(image.shape) == 2:  # Grayscale image
-                image = np.expand_dims(image, axis=0)
-
-            image = np.expand_dims(image, axis=0)
-            seg_mask = np.expand_dims(seg_mask, axis=0)
-            tra_mask = np.expand_dims(tra_mask, axis=0)
-
-            tensor_image = torch.from_numpy(image).float()
-            tensor_seg_mask = torch.from_numpy(seg_mask).float()
-            tensor_tra_mask = torch.from_numpy(tra_mask).float()
-            return tensor_image, tensor_seg_mask, tensor_tra_mask
-
         def transform(image, seg_mask, tra_mask):
             if self.train_aug:
                 image, seg_mask, tra_mask = Image.fromarray(image), Image.fromarray(seg_mask), Image.fromarray(tra_mask)
@@ -170,37 +155,7 @@ class Dataset(Dataset):
         return transform
 
 
-# def get_train_transform(crop_size, resize):
-#     train_transform = A.Compose(
-#         [
-#             A.ToFloat(max_value=65535.0),
-#             # A.Rotate(limit=35, p=1.0),
-#             A.RandomCrop(height=crop_size, width=crop_size),
-#             A.Resize(height=resize, width=resize),
-#             A.HorizontalFlip(p=0.5),
-#             A.VerticalFlip(p=0.5),
-#             A.Normalize(mean=[0.0], std=[1.0], ),
-#             # A.FromFloat(max_value=65535.0),
-#             # A.Lambda(image=lambda x, **kwargs: x.astype(np.float32)),
-#             ToTensorV2(),
-#         ],
-#     )
-#
-#     return train_transform
-#
-#
-# def get_val_transform(resize):
-#     val_transform = A.Compose(
-#         [
-#             A.ToFloat(max_value=65535.0),
-#             A.Resize(height=resize, width=resize),
-#             A.Normalize(mean=[0.0], std=[1.0], ),
-#             # A.FromFloat(max_value=65535.0),
-#             # A.Lambda(image=lambda x, **kwargs: x.astype(np.float32)),
-#             ToTensorV2(),
-#         ],
-#     )
-#     return val_transform
+################################ for tests ##########################################################3
 
 
 def get_transform(train_aug):

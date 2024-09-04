@@ -22,16 +22,9 @@ def save_checkpoint(state, filename="my_checkpoint.pth.tar"):
     torch.save(state, filename)
 
 
-# def load_checkpoint(checkpoint, model):
-#     print("=> Loading checkpoint")
-#     model.load_state_dict(checkpoint["state_dict"])
 def load_checkpoint(checkpoint, model):
-    # print("Checkpoint loaded, type:", type(checkpoint))
     try:
         print("=> Loading checkpoint")
-        # print("Checkpoint keys:", checkpoint.keys())
-
-        # checkpoint = torch.load(checkpoint_path, map_location=torch.device(DEVICE))
         model.load_state_dict(checkpoint["state_dict"])
         print("=> Checkpoint loaded successfully")
     except FileNotFoundError:
@@ -109,7 +102,6 @@ def get_cell_instances(input_np, marker=False,  three_d=False):
 def check_accuracy(loader, model, device="cuda", num_image=None, three_d=False, three_d_by_two_d=False,
                    save_path=None, name=None):
     print("=> Checking accuracy")
-    loader = tqdm(loader)
     seg = 0
     num_iters = 0
     model.eval()
@@ -127,7 +119,6 @@ def check_accuracy(loader, model, device="cuda", num_image=None, three_d=False, 
                                                                                batch_size=batch_size,
                                                                                depth=depth)
             predicted_classes = predict_classes(class_predictions)
-            # marker_predictions = predict_classes(marker_predictions)
             marker_predictions = (torch.sigmoid(marker_predictions) > 0.5).int().squeeze(1)
 
             gt = class_targets.numpy()
@@ -153,60 +144,45 @@ def check_accuracy(loader, model, device="cuda", num_image=None, three_d=False, 
     model.train()
 
 
-def check_accuracy_multy_models(loader, models, device="cuda", num_image=False, three_d=False):
+def check_accuracy_without_markers(loader, model, device="cuda", num_image=None, three_d=False, three_d_by_two_d=False,
+                                   save_path=None, name=None):
     print("=> Checking accuracy")
-    loader = tqdm(loader)
     seg = 0
     num_iters = 0
-    for model in models:
-        model.eval()
+    model.eval()
     with torch.no_grad():
         for data, class_targets, marker_targets in loader:
-            data = data.to(device)
-            # model_preds = [model(data) for model in models]
-            # preds = torch.mean(torch.stack(model_preds), dim=0)
-            preds, _ = models[0](data)
+            if three_d and three_d_by_two_d:
+                depth = data.shape[-3]
+                batch_size = data.shape[0]
+                data = three_d_to_two_d_represantation(data)
+            class_predictions, marker_predictions = model(data.to(device))
+            if three_d and three_d_by_two_d:
+                class_predictions = two_d_to_three_d_represantation(images=class_predictions,
+                                                                              batch_size=batch_size, depth=depth)
 
-            predicted_classes = predict_classes(preds).cpu().numpy()  # predict the class 0/1/2
+            predicted_classes = predict_classes(class_predictions).cpu().numpy()
             gt = class_targets.numpy()
             for i in range(predicted_classes.shape[0]):
-                pred_labels_mask, _ = get_cell_instances(predicted_classes[i], three_d=three_d)
-                accuracy, _ = calc_SEG_measure(pred_labels_mask, gt[i])
-                if accuracy != -1:
-                    seg += accuracy
-                    num_iters += 1
-
-                if num_image is not None and num_iters == num_image:
-                    print(f"seg score for {num_image} image: {seg / num_iters}")
-                    for model in models:
+                if torch.any(class_predictions > 0):
+                    pred_labels_mask, _ = get_cell_instances(predicted_classes[i], three_d=three_d)
+                    accuracy, _ = calc_SEG_measure(pred_labels_mask, gt[i])
+                    if accuracy != -1:
+                        seg += accuracy
+                        num_iters += 1
+                    if num_image is not None and num_iters == num_image:
+                        seg_score = seg / num_iters
+                        print(f"seg score for {num_image} image: {seg_score}")
                         model.train()
-                    return
+                        if save_path is not None and (seg_score >= 0.58):
+                            checkpoint = {
+                                "state_dict": model.state_dict(),
+                            }
+                            save_checkpoint(checkpoint, filename=f"{save_path}{name}_{seg_score:.4f}.pth.tar")
+                        return
 
     print(f"seg score: {seg / num_iters}")
-    for model in models:
-        model.train()
-
-
-def apply_color_map(input_tensor, three_d=False):
-    if three_d:
-        if input_tensor.dim() == 3:
-            input_tensor = input_tensor.unsqueeze(0)  # Add batch dimension if single image
-    else:
-        if input_tensor.dim() == 2:
-            input_tensor = input_tensor.unsqueeze(0)  # Add batch dimension if single image
-
-    # Create a color map tensor based on input values
-    color_map = torch.tensor([
-        [0, 0, 0],  # Black for value 0
-        [0, 255, 0],  # Green for value 1
-        [255, 255, 255]  # White for value 2
-    ], dtype=torch.float, device=input_tensor.device)  # Use input_tensor's device
-
-    # Index the color_map tensor with input_tensor to assign colors
-    output_tensor = color_map[input_tensor]
-    if three_d:
-        return output_tensor.permute(0, 4, 1, 2, 3)
-    return output_tensor.permute(0, 3, 1, 2)
+    model.train()
 
 
 def predict_classes(preds):
@@ -231,89 +207,6 @@ def get_instance_color(image):
 
     return colored_image
 
-
-# def save_predictions_as_imgs(loader, model, folder, device="cuda", three_d=False, wandb_tracking=False):
-#     print("=> saving images")
-#     model.eval()
-#     for idx, (x, y) in enumerate(loader):
-#         x = x.to(device=device, dtype=torch.float32)
-#         y = y.to(device=device)
-#         with torch.no_grad():
-#             preds = model(x)
-#             predicted_classes = predict_classes(preds)
-#
-#         for i in range(predicted_classes.shape[0]):  # Loop through the batch
-#             if three_d and idx == 0:
-#                 visualize_3d_image_from_classes(image=predicted_classes[i], save_path=f"{folder}/pred_{idx}_{i}.html",
-#                                                 wandb_tracking=wandb_tracking)
-#                 visualize_3d_image_from_classes(image=y[i], save_path=f"{folder}/gt_{idx}_{i}.html",
-#                                                 wandb_tracking=wandb_tracking)
-#                 # pred_img = colored_preds[i].permute(1, 2, 3, 0).cpu().numpy()
-#                 # gt_img = colored_gt[i].permute(1, 2, 3, 0).cpu().numpy()
-#                 # middle_slice = pred_img.shape[0]//2
-#                 # pred_img = pred_img[middle_slice]
-#                 # gt_img = gt_img[middle_slice]
-#
-#             else:
-#                 colored_preds = apply_color_map(predicted_classes, three_d=three_d).type(torch.uint8)
-#                 colored_gt = apply_color_map(Dataset.split_mask(y).long(), three_d=three_d).type(torch.uint8)
-#
-#                 pred_img = colored_preds[i].permute(1, 2, 0).cpu().numpy()
-#                 gt_img = colored_gt[i].permute(1, 2, 0).cpu().numpy()
-#                 separator_line = np.ones((pred_img.shape[0], 5, 3), dtype=np.uint8) * 255  # Red line
-#                 concatenated_img = np.concatenate([pred_img, separator_line, gt_img], axis=1)
-#
-#                 # Convert to PIL Image
-#                 concatenated_img_pil = Image.fromarray(concatenated_img)
-#
-#                 # Save the concatenated image
-#                 concatenated_img_pil.save(f"{folder}/pred_gt_{idx}_{i}.png")
-#
-#         if three_d:
-#             break
-#
-#     model.train()
-
-
-# def visualize_3d_image_from_classes(image, save_path, wandb_tracking=False):
-#     # if on GPU
-#     image_np = image.cpu().numpy()
-#
-#     x, y, z = np.indices(image_np.shape)
-#     x, y, z = x[image_np > 0], y[image_np > 0], z[image_np > 0]  # Get indices where the voxel value is not zero
-#     values = image_np[image_np > 0]  # Get voxel values that are not zero
-#
-#     colors = np.where(values == 1, 'green', 'red')
-#
-#     # Create 3D scatter plot
-#     fig = go.Figure(data=[
-#         go.Scatter3d(
-#             x=x.flatten(),
-#             y=y.flatten(),
-#             z=z.flatten(),
-#             mode='markers',
-#             marker=dict(
-#                 size=5,
-#                 color=colors,  # Color by voxel value
-#                 opacity=0.2
-#             )
-#         )
-#     ])
-#
-#     # Update layout for better visualization
-#     fig.update_layout(scene=dict(
-#         xaxis=dict(nticks=4, range=[0, image_np.shape[0]]),
-#         yaxis=dict(nticks=4, range=[0, image_np.shape[1]]),
-#         zaxis=dict(nticks=4, range=[0, image_np.shape[2]]),
-#         aspectratio=dict(x=1, y=1, z=1)
-#     ))
-#     # Save the figure to a temporary file
-#     fig.write_html(save_path)
-#     if wandb_tracking:
-#         table = wandb.Table(columns=["plotly_figure"])
-#         table.add_data(wandb.Html(save_path))
-#         # Log the image to wandb
-#         wandb.log({os.path.basename(save_path): table})
 
 
 def save_instance_by_colors(loader, model, folder, wandb_step, device="cuda", three_d=False, three_d_by_two_d=False, wandb_tracking=False):
@@ -344,6 +237,42 @@ def save_instance_by_colors(loader, model, folder, wandb_step, device="cuda", th
             visualize_3d_image_instances(image=gt, save_path=f"{folder}/gt_instances.html",
                                          wandb_tracking=wandb_tracking, wandb_step=wandb_step)
             visualize_3d_image_instances(image=marker_predictions[0].cpu().numpy().astype(np.uint8), save_path=f"{folder}/markers_pred.html",
+                                         wandb_tracking=wandb_tracking, wandb_step=wandb_step)
+
+        else:
+            colored_instance_preds = Image.fromarray(get_instance_color(predicted))
+            colored_instance_gt = Image.fromarray(get_instance_color(gt))
+            colored_instance_preds.save(f"{folder}/pred_instances.png")
+            colored_instance_gt.save(f"{folder}/gt_instances.png")
+            if wandb_tracking:
+                wandb.log({"pred_instances": wandb.Image(colored_instance_preds)}, step=wandb_step)
+                wandb.log({"gt_instances": wandb.Image(colored_instance_gt)}, step=wandb_step)
+        break
+F
+
+def save_instance_by_colors_without_markers(loader, model, folder, wandb_step, device="cuda", three_d=False, three_d_by_two_d=False, wandb_tracking=False):
+    print("=> saving instance images")
+    model.eval()
+    for idx, (data, class_targets, marker_targets) in enumerate(loader):
+        if three_d and three_d_by_two_d:
+            depth = data.shape[-3]
+            batch_size = data.shape[0]
+            data = three_d_to_two_d_represantation(data)
+        data = data.to(device=device, dtype=torch.float32)
+        with torch.no_grad():
+            class_predictions, marker_predictions = model(data.to(device=device))
+            if three_d and three_d_by_two_d:
+                class_predictions = two_d_to_three_d_represantation(images=class_predictions,
+                                                                              batch_size=batch_size, depth=depth)
+
+            predicted_classes = predict_classes(class_predictions).cpu().numpy()
+
+        predicted, _ = get_cell_instances(predicted_classes[0], three_d=three_d)
+        gt = class_targets[0].cpu().numpy().astype(np.uint8)
+        if three_d:
+            visualize_3d_image_instances(image=predicted, save_path=f"{folder}/pred_instances.html",
+                                         wandb_tracking=wandb_tracking, wandb_step=wandb_step)
+            visualize_3d_image_instances(image=gt, save_path=f"{folder}/gt_instances.html",
                                          wandb_tracking=wandb_tracking, wandb_step=wandb_step)
 
         else:
@@ -543,41 +472,6 @@ def inference(class_predictions, marker_predictions, three_d=False):
 
         return closest_marker_map
 
-    def find_nearest_markers_KDTree(foreground, markers):
-        """
-        Finds the nearest marker for each pixel in the foreground with a value of 1 and
-        returns an array where each pixel in the foreground is labeled with the value of the nearest marker.
-
-        Parameters:
-        - foreground (np.array): 2D array where pixels of interest are marked with 1.
-        - markers (np.array): 2D array where non-zero values indicate different marker types.
-        - num_features (int): The number of unique non-zero elements in the markers array.
-
-        Returns:
-        - np.array: Array where each pixel in the foreground has the value of the nearest marker.
-        """
-        # Find coordinates of pixels with value 1 in the foreground
-        foreground_coords = np.argwhere(foreground == 1)
-
-        # Find coordinates of markers and their values
-        marker_coords = np.argwhere(markers > 0)
-        marker_values = markers[marker_coords[:, 0], marker_coords[:, 1]]
-
-        # Create KDTree for marker coordinates
-        tree = KDTree(marker_coords)
-
-        # Find the nearest marker for each foreground pixel
-        distances, indices = tree.query(foreground_coords)
-        nearest_marker_values = marker_values[indices]
-
-        # Create an output array with the same shape as foreground, initialized to 0
-        result_array = np.zeros(foreground.shape, dtype=markers.dtype)
-
-        # Use advanced indexing to set the nearest marker values
-        result_array[foreground == 1] = nearest_marker_values
-
-        return result_array
-
     # predicted_classes = predict_classes(class_predictions).cpu().numpy()
     predicted_classes = class_predictions.cpu().numpy()
     predicted_foregound = (predicted_classes == 2).astype(np.uint8)
@@ -687,6 +581,9 @@ def save_images_to_check_accuracy(loader, model, save_path, device, three_d, thr
                     tiff.imwrite(f"{save_path}01_RES/mask{counter:03}.tif", pred_labels_mask, dtype=np.uint16)
                     tiff.imwrite(f"{save_path}01_GT/SEG/man_seg{counter:03}.tif", gt[i], dtype=np.uint16)
                     counter +=1
+
+
+################################### for tests ####################################################
 
 def t_inference():
     markers = np.array([[0, 0, 0, 0, 0],

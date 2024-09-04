@@ -7,7 +7,7 @@ import wandb
 from tqdm import tqdm
 from dataset import Dataset
 from dataset3D import Dataset3D
-from transformer.models.swinunetr import get_SwinUNETR_model
+from models.transformer.swinunetr import get_SwinUNETR_model
 from monai.losses import DiceCELoss, FocalLoss, DiceFocalLoss
 import torch.nn.functional as F
 
@@ -16,7 +16,6 @@ from utils import (
     save_checkpoint,
     get_loader,
     check_accuracy,
-    check_accuracy_multy_models,
     save_instance_by_colors,
     save_images_to_check_accuracy,
 )
@@ -29,18 +28,18 @@ L1_LAMBDA = 1e-5
 BATCH_SIZE = 8
 NUM_EPOCHS = 200
 NUM_WORKERS = 4
-CLASS_WEIGHTS = [0.1, 0.7, 0.2]  # [0.15, 0.6, 0.25][0.2, 0.6, 0.2][0.1, 0.6, 0.3]
+CLASS_WEIGHTS = [0.1, 0.7, 0.2] # [0.15, 0.6, 0.25][0.2, 0.6, 0.2][0.1, 0.6, 0.3][0.1, 0.7, 0.2]
 MARKERS_WEIGHTS = [1.5]
 
 PIN_MEMORY = False
 LOAD_MODEL = False
-WANDB_TRACKING = True
+WANDB_TRACKING = False
 
 CROP_SIZE = (32, 128, 128)  # (32, 128, 128)  # (32, 256, 256)
 THREE_D = True
 THREE_D_BY_TWO_D = False
 
-RUNAI = True
+RUNAI = False
 FREEZE_PRE_TRAINED = False
 
 if RUNAI:
@@ -61,7 +60,7 @@ else:
     VAL_IMG_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01"
     VAL_MASK_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/SEG"
     VAL_TRA_DIR = "/mnt/tmp/data/users/thomasm/Fluo-N3DH-SIM+/01_GT/TRA2"
-PRETRAINED_DIR = f"{SAVE_PATH}pretrained_swinunetr.pt"
+PRETRAINED_DIR = None #f"{SAVE_PATH}pretrained_swinunetr.pt"
 
 
 def calculate_l1_loss(model):
@@ -91,12 +90,11 @@ def train_fn(loader, model, optimizer, loss_functions, scaler):
             class_predictions, marker_predictions = model(data)
             for loss_fn in loss_functions:
                 if isinstance(loss_fn, nn.CrossEntropyLoss):
-                    # CrossEntropyLoss expects targets as class indices (without one-hot encoding)
                     loss += loss_fn(class_predictions, class_targets)
                 elif isinstance(loss_fn, nn.BCEWithLogitsLoss):
-                    # BCEWithLogitsLoss expects targets to be of the same shape as predictions
                     loss += loss_fn(marker_predictions.squeeze(1), marker_targets)
-                elif isinstance(loss_fn, DiceCELoss):
+                elif isinstance(loss_fn, DiceCELoss) or isinstance(loss_fn, FocalLoss) or isinstance(loss_fn,
+                                                                                                         DiceFocalLoss):
                     if THREE_D and (not THREE_D_BY_TWO_D):
                         class_targets_one_hot = F.one_hot(class_targets, num_classes=3).permute(0, 4, 1, 2, 3).float()
                     else:
@@ -146,7 +144,8 @@ def evaluate_fn(loader, model, loss_functions):
                 elif isinstance(loss_fn, nn.BCEWithLogitsLoss):
                     loss += loss_fn(marker_predictions.squeeze(1), marker_targets)
 
-                elif isinstance(loss_fn, DiceCELoss):
+                elif isinstance(loss_fn, DiceCELoss) or isinstance(loss_fn, FocalLoss) or isinstance(loss_fn,
+                                                                                                     DiceFocalLoss):
                     if THREE_D and (not THREE_D_BY_TWO_D):
                         class_targets_one_hot = F.one_hot(class_targets, num_classes=3).permute(0, 4, 1, 2, 3).float()
                     else:
@@ -165,7 +164,7 @@ def evaluate_fn(loader, model, loss_functions):
 
 def main():
     if WANDB_TRACKING:
-        wandb.login(key="12b9b358323faf2af56dc288334e6247c1e8bc63")
+        wandb.login(key="")
         wandb.init(project="swinunetr",
                    config={
                        "THREE_D": THREE_D,
@@ -185,11 +184,11 @@ def main():
     markers_weights = torch.FloatTensor(MARKERS_WEIGHTS).to(DEVICE)
 
     # CrossEntropyLoss
-    # criterion = [nn.CrossEntropyLoss(weight=class_weights), nn.BCEWithLogitsLoss(pos_weight=markers_weights)]
+    criterion = [nn.CrossEntropyLoss(weight=class_weights), nn.BCEWithLogitsLoss(pos_weight=markers_weights)]
     # DiceCELoss
-    criterion = [DiceCELoss(softmax=True, squared_pred=True, weight=class_weights),
-                 # in reference was , batch=True)
-                 nn.BCEWithLogitsLoss(pos_weight=markers_weights)]
+    # criterion = [DiceCELoss(softmax=True, squared_pred=True, weight=class_weights),
+    #              # in reference was , batch=True)
+    #              nn.BCEWithLogitsLoss(pos_weight=markers_weights)]
     # FocalLoss
     # criterion = [FocalLoss(softmax=True, squared_pred=True, gamma=2, alpha=class_weights),
     #              nn.BCEWithLogitsLoss(pos_weight=markers_weights)]
@@ -242,27 +241,24 @@ def main():
             }
             save_checkpoint(checkpoint, filename=f"{SAVE_PATH}swinunetr_checkpoint.pth.tar")
 
-            save_instance_by_colors(loader=val_loader, model=model, folder=f"{SAVE_PATH}saved_images", device=DEVICE,
-                                    three_d=THREE_D, wandb_tracking=WANDB_TRACKING, wandb_step=wandb_step,
-                                    three_d_by_two_d=THREE_D_BY_TWO_D)
+
             if (epoch + 1) != NUM_EPOCHS:
                 check_accuracy(test_check_accuracy_loader, model, num_image=50, device=DEVICE, three_d=THREE_D,
                                three_d_by_two_d=THREE_D_BY_TWO_D, save_path=SAVE_PATH, name=f"swin_{epoch}")
+                save_instance_by_colors(loader=val_loader, model=model, folder=f"{SAVE_PATH}saved_images",
+                                        device=DEVICE,
+                                        three_d=THREE_D, wandb_tracking=WANDB_TRACKING, wandb_step=wandb_step,
+                                        three_d_by_two_d=THREE_D_BY_TWO_D)
 
         if WANDB_TRACKING:
             wandb_step += 1
 
     check_accuracy(test_check_accuracy_loader, model, device=DEVICE, three_d=THREE_D, three_d_by_two_d=THREE_D_BY_TWO_D)
-    if NUM_EPOCHS % 10 != 0:
-        # save instance image
-        save_instance_by_colors(loader=test_check_accuracy_loader, model=model, folder=f"{SAVE_PATH}", three_d=THREE_D,
-                                device=DEVICE, wandb_tracking=WANDB_TRACKING, wandb_step=wandb_step,
-                                three_d_by_two_d=THREE_D_BY_TWO_D)
+    save_instance_by_colors(loader=test_check_accuracy_loader, model=model, folder=f"{SAVE_PATH}", three_d=THREE_D,
+                            device=DEVICE, wandb_tracking=WANDB_TRACKING, wandb_step=wandb_step,
+                            three_d_by_two_d=THREE_D_BY_TWO_D)
 
     if WANDB_TRACKING:
-        # torch.onnx.export(model, torch.randn(1, 1, CROP_SIZE, device=DEVICE), "model.onnx")
-        # wandb.save("model.onnx")
-        # print("=> saved model.onnx to wandb")
         wandb.finish()
 
 
@@ -289,27 +285,9 @@ def t_acc():
     # save_slices(test_check_accuracy_loader, model, device=DEVICE, three_d=THREE_D)
 
 
-# def t_acc_mul_models():
-#     model = UNET(in_channels=1, out_channels=3).to(DEVICE)
-#     load_checkpoint(torch.load("checkpoint/my_checkpoint_0.838.pth.tar", map_location=torch.device(DEVICE)), model)
-#
-#     model1 = UNET(in_channels=1, out_channels=3).to(DEVICE)
-#     load_checkpoint(torch.load("checkpoint/my_checkpoint_0.82.pth.tar", map_location=torch.device(DEVICE)), model1)
-#
-#     model2 = UNET(in_channels=1, out_channels=3).to(DEVICE)
-#     load_checkpoint(torch.load("checkpoint/my_checkpoint1.pth.tar", map_location=torch.device(DEVICE)), model2)
-#
-#     test_check_accuracy_loader = get_loader(dir=VAL_IMG_DIR, maskdir=VAL_MASK_DIR, train_aug=False, shuffle=True,
-#                                             batch_size=1, crop_size=CROP_SIZE, num_workers=NUM_WORKERS,
-#                                             pin_memory=PIN_MEMORY)
-#     check_accuracy_multy_models(test_check_accuracy_loader, [model], device=DEVICE, one_image=False)
-#     check_accuracy_multy_models(test_check_accuracy_loader, [model1], device=DEVICE, one_image=False)
-#     check_accuracy_multy_models(test_check_accuracy_loader, [model2], device=DEVICE, one_image=False)
-#     check_accuracy_multy_models(test_check_accuracy_loader, [model, model1], device=DEVICE, one_image=False)
-#     check_accuracy_multy_models(test_check_accuracy_loader, [model, model1, model2], device=DEVICE, one_image=False)
 
 if __name__ == "__main__":
-    # main()
-    t_acc()
+    main()
+    # t_acc()
     # t_acc_mul_models()
     # t_save_instance_by_colors()

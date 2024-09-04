@@ -98,7 +98,8 @@ optimizer:
   name: 'AdamW'
   lr: 1.e-4
   weight_decay: 1e-3
-  l1_lambda: 1e-5
+
+l1_lambda: 1e-5
 
 scheduler:
   name: 'ReduceLROnPlateau'

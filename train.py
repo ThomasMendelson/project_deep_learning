@@ -1,20 +1,13 @@
-import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import wandb
-import numpy as np
 from tqdm import tqdm
-from PIL import Image
 
-# import albumentations as A
-from model import UNET
-# from albumentations.pytorch import ToTensorV2
+from models.unet.model import UNET
 from dataset import Dataset
 
-import torchvision
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
+
 
 from utils import (
     load_checkpoint,
@@ -172,9 +165,6 @@ def main():
     save_instance_by_colors(test_check_accuracy_loader, model, folder="checkpoint", device=DEVICE)
 
     if WANDB_TRACKING:
-        # torch.onnx.export(model, torch.randn(1, 1, CROP_SIZE, CROP_SIZE, device=DEVICE), "model.onnx")
-        # wandb.save("model.onnx")
-        # print("=> saved model.onnx to wandb")
         wandb.finish()
 
 
