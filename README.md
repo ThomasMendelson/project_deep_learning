@@ -39,17 +39,21 @@ Hatamizadeh, A., et al. (2021). *UNETR: Transformers for 3D Medical Image Segmen
    - Download the dataset from the [Fluo-N3DH-SIM+ dataset page](https://celltrackingchallenge.net/3d-datasets/).
    - Update the file paths in the configuration files and scripts to match the downloaded dataset location.
 
-2. **Configure Hyperparameters:**
+2. **Download the requirements:**
+   ```bash
+   pip install -r requirements.txt
+
+3. **Configure Hyperparameters:**
    - Adjust the hyperparameters in the scripts (`train3D.py`, `train_swin.py`, `train_vit2.py`) to suit your experimental setup, including learning rates, batch sizes, and loss function weights.
 
-3. **Train the Model:**
+4. **Train the Model:**
    - Use the `main.py` to choose which model to train and set additional options for your experiments.
    - Example command:
      ```bash
      python main.py --model vit_unet
      ```
 
-4. **Evaluate and Analyze:**
+5. **Evaluate and Analyze:**
    - After training, use the saved models to perform evaluation with **check_accuray** function in **utils.py** and generate segmentation results. 
 
 ## Additional Notes
