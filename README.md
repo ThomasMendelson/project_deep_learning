@@ -19,7 +19,7 @@ Our architecture is inspired by the UNETR model proposed in the paper *"UNETR: T
 
 
 The key components of our architecture include:
-- ** Vision Transformer:** Processes the input image using multi-head self-attention to capture long-range dependencies.
+- **Vision Transformer:** Processes the input image using multi-head self-attention to capture long-range dependencies.
 - **Skip Connections:** Connect encoder and decoder at multiple resolutions to preserve spatial details.
 - **U-Net Decoder:** Uses the outputs of the Vit and skip connections to form a U-Net decoder stracture. 
 - **Dual Output Layers:** Provides separate outputs for segmentation and marker maps, aiding in precise cell identification and boundary delineation.
